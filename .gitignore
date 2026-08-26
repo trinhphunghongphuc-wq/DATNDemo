@@ -1,0 +1,30 @@
+# Java
+target/
+build/
+*.class
+*.jar
+*.war
+
+# IntelliJ / Eclipse / VS Code
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+.vscode/
+
+# Frontend Node.js
+node_modules/
+dist/
+build/
+.env
+.env.*
+
+# Log và file hệ điều hành
+*.log
+.DS_Store
+Thumbs.db
+
+# Không đẩy file cấu hình chứa mật khẩu
+application-local.properties
+application-secret.properties

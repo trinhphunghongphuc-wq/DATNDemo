@@ -1,0 +1,35 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_20-055564527a3b1a4aa667b93f06d479ab6166c47b",
+  "solcVersion": "0.8.20",
+  "solcLongVersion": "0.8.20+commit.a1b79de6",
+  "userSourceNameMap": {
+    "contracts/TraceabilityRegistry.sol": "project/contracts/TraceabilityRegistry.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "shanghai",
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode",
+            "evm.deployedBytecode",
+            "evm.methodIdentifiers",
+            "metadata"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/TraceabilityRegistry.sol": {
+        "content": "pragma solidity ^0.8.20;\r\n\r\ncontract TraceabilityRegistry {\r\n\r\n    struct BatchInfo {\r\n        bytes32 merkleRoot;\r\n        uint256 updatedAt;\r\n        address updatedBy;\r\n        bool exists;\r\n    }\r\n\r\n    mapping(uint256 => BatchInfo) private batches;\r\n\r\n    event RootStored(\r\n        uint256 indexed batchId,\r\n        bytes32 merkleRoot,\r\n        address indexed updatedBy,\r\n        uint256 updatedAt\r\n    );\r\n\r\n    function setRoot(uint256 batchId, bytes32 merkleRoot) external {\r\n        require(batchId > 0, \"Invalid batchId\");\r\n        require(merkleRoot != bytes32(0), \"Empty root\");\r\n\r\n        batches[batchId] = BatchInfo({\r\n            merkleRoot: merkleRoot,\r\n            updatedAt: block.timestamp,\r\n            updatedBy: msg.sender,\r\n            exists: true\r\n        });\r\n\r\n        emit RootStored(batchId, merkleRoot, msg.sender, block.timestamp);\r\n    }\r\n\r\n    function getRoot(uint256 batchId) external view returns (bytes32) {\r\n        require(batches[batchId].exists, \"Batch not found\");\r\n        return batches[batchId].merkleRoot;\r\n    }\r\n\r\n    function getBatchInfo(uint256 batchId)\r\n        external\r\n        view\r\n        returns (bytes32 merkleRoot, uint256 updatedAt, address updatedBy, bool exists)\r\n    {\r\n        BatchInfo memory batch = batches[batchId];\r\n        return (batch.merkleRoot, batch.updatedAt, batch.updatedBy, batch.exists);\r\n    }\r\n\r\n    function verifyRecord(\r\n        uint256 batchId,\r\n        bytes32 leaf,\r\n        bytes32[] calldata proof,\r\n        uint256 leafIndex\r\n    ) external view returns (bool) {\r\n        require(batches[batchId].exists, \"Batch not found\");\r\n\r\n        bytes32 computedHash = leaf;\r\n        uint256 currentIndex = leafIndex;\r\n\r\n        for (uint256 i = 0; i < proof.length; i++) {\r\n            bytes32 sibling = proof[i];\r\n\r\n            if (currentIndex % 2 == 0) {\r\n                computedHash = keccak256(abi.encodePacked(computedHash, sibling));\r\n            } else {\r\n                computedHash = keccak256(abi.encodePacked(sibling, computedHash));\r\n            }\r\n\r\n            currentIndex = currentIndex / 2;\r\n        }\r\n\r\n        return computedHash == batches[batchId].merkleRoot;\r\n    }\r\n}"
+      }
+    }
+  }
+}

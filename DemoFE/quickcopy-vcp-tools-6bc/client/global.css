@@ -1,0 +1,72 @@
+/** @import must precede all other statements */
+@import url("https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 37% 10%;
+    --foreground: 215 20% 88%;
+
+    --card: 220 32% 14%;
+    --card-foreground: 215 20% 88%;
+
+    --popover: 220 32% 14%;
+    --popover-foreground: 215 20% 88%;
+
+    --primary: 224 85% 58%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 25% 19%;
+    --secondary-foreground: 215 20% 88%;
+
+    --muted: 220 25% 19%;
+    --muted-foreground: 215 20% 55%;
+
+    --accent: 220 25% 20%;
+    --accent-foreground: 215 20% 88%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 22% 20%;
+    --input: 220 22% 18%;
+    --ring: 224 85% 58%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 220 40% 9%;
+    --sidebar-foreground: 215 20% 75%;
+    --sidebar-primary: 224 85% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 30% 15%;
+    --sidebar-accent-foreground: 215 20% 88%;
+    --sidebar-border: 220 25% 16%;
+    --sidebar-ring: 224 85% 58%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Inter", sans-serif;
+  }
+
+  :where(p, span, li, h1, h2, h3, h4, h5, h6, a, button, label, td, th) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  pre,
+  code {
+    overflow-x: auto;
+    white-space: pre;
+    font-family: "Courier New", Courier, monospace;
+  }
+}
