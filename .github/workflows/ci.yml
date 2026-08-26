@@ -35,7 +35,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: DemoDA/FE
+        working-directory: DemoDA/FE/frontend
 
     steps:
       - name: Lay source code
