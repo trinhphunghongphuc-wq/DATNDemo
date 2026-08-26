@@ -1,0 +1,83 @@
+name: CI - Build and Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend Java
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: DemoDA/BE
+
+    steps:
+      - name: Lay source code
+        uses: actions/checkout@v4
+
+      - name: Cai dat Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Build va test Backend
+        run: mvn clean verify
+
+  frontend:
+    name: Frontend React
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: DemoDA/FE
+
+    steps:
+      - name: Lay source code
+        uses: actions/checkout@v4
+
+      - name: Cai dat Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: DemoDA/FE/package-lock.json
+
+      - name: Cai dependencies
+        run: npm ci
+
+      - name: Build React
+        run: npm run build
+
+  smart-contract:
+    name: Smart Contract Hardhat
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: DemoDA/SmartContract
+
+    steps:
+      - name: Lay source code
+        uses: actions/checkout@v4
+
+      - name: Cai dat Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: DemoDA/SmartContract/package-lock.json
+
+      - name: Cai dependencies
+        run: npm ci
+
+      - name: Compile Smart Contract
+        run: npx hardhat compile
+
+      - name: Test Smart Contract
+        run: npx hardhat test
