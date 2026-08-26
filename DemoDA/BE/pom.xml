@@ -147,28 +147,28 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
 
-            <plugin>
-                <groupId>org.web3j</groupId>
-                <artifactId>web3j-maven-plugin</artifactId>
-                <version>5.0.2</version>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>generate-sources</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <packageName>com.blockchain.contract</packageName>
-                    <sourceDestination>src/main/java</sourceDestination>
-                    <soliditySourceFiles>
-                        <directory>../SmartContract/contracts</directory>
-                        <includes>
-                            <include>TraceabilityRegistry.sol</include>
-                        </includes>
-                    </soliditySourceFiles>
-                </configuration>
-            </plugin>
+<!--            <plugin>-->
+<!--                <groupId>org.web3j</groupId>-->
+<!--                <artifactId>web3j-maven-plugin</artifactId>-->
+<!--                <version>5.0.2</version>-->
+<!--                <executions>-->
+<!--                    <execution>-->
+<!--                        <goals>-->
+<!--                            <goal>generate-sources</goal>-->
+<!--                        </goals>-->
+<!--                    </execution>-->
+<!--                </executions>-->
+<!--                <configuration>-->
+<!--                    <packageName>com.blockchain.contract</packageName>-->
+<!--                    <sourceDestination>src/main/java</sourceDestination>-->
+<!--                    <soliditySourceFiles>-->
+<!--                        <directory>../SmartContract/contracts</directory>-->
+<!--                        <includes>-->
+<!--                            <include>TraceabilityRegistry.sol</include>-->
+<!--                        </includes>-->
+<!--                    </soliditySourceFiles>-->
+<!--                </configuration>-->
+<!--            </plugin>-->
 
 
         </plugins>
