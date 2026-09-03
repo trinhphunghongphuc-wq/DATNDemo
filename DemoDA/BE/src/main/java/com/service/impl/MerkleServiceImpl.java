@@ -127,4 +127,16 @@ public class MerkleServiceImpl implements MerkleService {
         }
         return hex.toString();
     }
+
+    private byte[] hexToBytes32(String hash) {
+        if (hash == null) {
+            throw new IllegalArgumentException("Hash must not be null");
+        }
+
+        byte[] bytes = HexUtil.hexToBytes(hash);
+        if (bytes.length != 32) {
+            throw new IllegalArgumentException("Each Merkle hash must be exactly 32 bytes");
+        }
+        return bytes;
+    }
 }
