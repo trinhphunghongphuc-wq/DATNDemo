@@ -84,4 +84,13 @@ public class Batch {
         }
     }
 
+    @Column(name = "producer_merkle_root", length = 64)
+    private String producerMerkleRoot;
+
+    @Column(name = "distributor_merkle_root", length = 64)
+    private String distributorMerkleRoot;
+
+    @Column(name = "retailer_merkle_root", length = 64)
+    private String retailerMerkleRoot;
+
 }
