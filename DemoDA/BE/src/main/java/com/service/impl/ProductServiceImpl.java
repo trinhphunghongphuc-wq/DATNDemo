@@ -2,7 +2,6 @@ package com.service.impl;
 
 import com.dto.product.ProductDetailResponse;
 import com.dto.product.ProductListResponse;
-
 import com.dto.product.TraceabilityResponse;
 import com.dto.product.TraceabilityStepResponse;
 import com.dto.record.RecordItemResponse;
@@ -52,7 +51,6 @@ public class ProductServiceImpl implements ProductService {
                 .orElseThrow(() -> new RuntimeException("Batch not found with id: " + batchId));
 
         List<Record> records = recordRepository.findByBatchId(batchId);
-
         Record firstRecord = records.isEmpty() ? null : records.get(0);
         Map<String, String> rawData = jsonExtractService.extractBasicFields(firstRecord);
 
@@ -87,7 +85,20 @@ public class ProductServiceImpl implements ProductService {
         Batch batch = batchRepository.findById(batchId)
                 .orElseThrow(() -> new RuntimeException("Batch not found with id: " + batchId));
 
-        List<Record> records = recordRepository.findByBatchId(batchId);
+        return buildTraceabilityResponse(batch);
+    }
+
+    @Override
+    public TraceabilityResponse getTraceabilityByBatchCode(String batchCode) {
+        Batch batch = batchRepository.findByBatchCode(batchCode)
+                .orElseThrow(() ->
+                        new RuntimeException("Batch not found with code: " + batchCode));
+
+        return buildTraceabilityResponse(batch);
+    }
+
+    private TraceabilityResponse buildTraceabilityResponse(Batch batch) {
+        List<Record> records = recordRepository.findByBatchId(batch.getId());
 
         List<TraceabilityStepResponse> steps = records.stream()
                 .map(record -> new TraceabilityStepResponse(
@@ -110,7 +121,11 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    public List<ProductListResponse> searchAndFilterProducts(String keyword, String origin, String status) {
+    public List<ProductListResponse> searchAndFilterProducts(
+            String keyword,
+            String origin,
+            String status
+    ) {
         List<ProductListResponse> products = getAllProducts();
 
         return products.stream()
@@ -129,8 +144,6 @@ public class ProductServiceImpl implements ProductService {
     private boolean containsIgnoreCase(String source, String keyword) {
         return source != null && source.toLowerCase().contains(keyword.toLowerCase());
     }
-
-
 
     private Record getFirstRecord(Long batchId) {
         List<Record> records = recordRepository.findByBatchId(batchId);

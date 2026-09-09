@@ -14,5 +14,7 @@ public interface ProductService {
 
     TraceabilityResponse getTraceability(Long batchId);
 
+    TraceabilityResponse getTraceabilityByBatchCode(String batchCode);
+
     List<ProductListResponse> searchAndFilterProducts(String keyword, String origin, String status);
 }

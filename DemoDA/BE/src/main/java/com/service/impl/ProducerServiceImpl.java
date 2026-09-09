@@ -173,6 +173,9 @@ public class ProducerServiceImpl implements ProducerService {
                 .id(batch.getId())
                 .name(batch.getName())
                 .batchCode(batch.getBatchCode())
+                .qrContent(
+                        "http://localhost:5173/trace/batch/" + batch.getBatchCode()
+                )
                 .merkleRoot(batch.getMerkleRoot())
                 .chainTxHash(batch.getChainTxHash())
                 .expiryDate(batch.getExpiryDate())

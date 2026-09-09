@@ -31,6 +31,14 @@ public class ProductController {
         return productService.getTraceability(batchId);
     }
 
+    // API public: QR của Producer chứa batchCode.
+    @GetMapping("/traceability/batch/{batchCode}")
+    public TraceabilityResponse getTraceabilityByBatchCode(
+            @PathVariable String batchCode
+    ) {
+        return productService.getTraceabilityByBatchCode(batchCode);
+    }
+
     @GetMapping("/products/filter")
     public List<ProductListResponse> searchAndFilterProducts(
             @RequestParam(required = false) String keyword,

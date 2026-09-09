@@ -14,6 +14,9 @@ public class ProducerBatchResponse {
     private String name;
     private String batchCode;
 
+    // URL được dùng để tạo QR cho Consumer quét
+    private String qrContent;
+
     private String merkleRoot;
     private String chainTxHash;
 

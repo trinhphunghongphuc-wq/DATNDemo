@@ -3,6 +3,7 @@ package com.service.impl;
 import com.dto.record.RecordRequest;
 import com.entity.Batch;
 import com.entity.Record;
+import com.enums.BatchStatus;
 import com.enums.RecordStage;
 import com.enums.RecordType;
 import com.enums.Role;
@@ -44,6 +45,35 @@ public class RecordServiceImpl implements RecordService {
         this.stageMerkleService = stageMerkleService;
     }
 
+    private void validateStageCanAddRecord(
+            Batch batch,
+            RecordStage recordStage
+    ) {
+        BatchStatus status = batch.getStatus();
+
+        boolean allowed = switch (recordStage) {
+            case PRODUCER ->
+                    status == BatchStatus.CREATED
+                            || status == BatchStatus.IN_PRODUCTION
+                            || status == BatchStatus.ASSIGNED_TO_DISTRIBUTOR;
+
+            case DISTRIBUTOR ->
+                    status == BatchStatus.RECEIVED_BY_DISTRIBUTOR
+                            || status == BatchStatus.IN_DISTRIBUTION;
+
+            case RETAILER ->
+                    status == BatchStatus.AT_RETAIL;
+        };
+
+        if (!allowed) {
+            throw new IllegalStateException(
+                    "Cannot add " + recordStage
+                            + " record when batch status is "
+                            + status
+            );
+        }
+    }
+
     @Override
     @Transactional
     public List<Record> createRecordsForBatch(
@@ -54,6 +84,7 @@ public class RecordServiceImpl implements RecordService {
         validateRecordWritable(batch);
 
         List<Record> records = new ArrayList<>();
+
 
         // Vị trí của record trong toàn bộ batch.
         int startIndex = recordRepository
@@ -72,6 +103,11 @@ public class RecordServiceImpl implements RecordService {
                     request.getRecordType()
             );
 
+            RecordStage recordStage =
+                    resolveRecordStage(request.getRecordType());
+
+            validateStageCanAddRecord(batch, recordStage);
+
             String recordKey =
                     generateRecordKey(request.getRecordType());
 
@@ -80,9 +116,6 @@ public class RecordServiceImpl implements RecordService {
 
             String ipfsCid =
                     ipfsService.uploadJson(request.getRawJson());
-
-            RecordStage recordStage =
-                    resolveRecordStage(request.getRecordType());
 
             int stageLeafIndex = nextStageIndexes.computeIfAbsent(
                     recordStage,
