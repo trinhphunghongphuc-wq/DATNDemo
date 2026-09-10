@@ -12,6 +12,17 @@ public class RecordRequest {
     @NotBlank
     private String rawJson;
 
+    /*
+     * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+     * Phân biệt record công khai và record riêng tư.
+     *
+     * false: lưu JSON công khai trên IPFS.
+     * true: mã hóa JSON bằng AES-256-GCM trước khi upload IPFS.
+     *
+     * Giá trị mặc định là false nên request cũ vẫn hoạt động.
+     */
+    private boolean privateData;
+
     public RecordType getRecordType() {
         return recordType;
     }
@@ -26,5 +37,13 @@ public class RecordRequest {
 
     public void setRawJson(String rawJson) {
         this.rawJson = rawJson;
+    }
+
+    public boolean isPrivateData() {
+        return privateData;
+    }
+
+    public void setPrivateData(boolean privateData) {
+        this.privateData = privateData;
     }
 }

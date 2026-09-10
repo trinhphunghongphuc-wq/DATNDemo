@@ -101,12 +101,17 @@ public class ProducerServiceImpl implements ProducerService {
 
     @Override
     @Transactional(readOnly = true)
-    public VerifyAllResponse verifyAll(Long batchId, String username) {
-
-        Batch batch = batchRepository.findByIdAndCreatedByUsername(batchId, username)
-                .orElseThrow(() -> new RuntimeException(
-                        "Batch not found or you do not have permission"
-                ));
+    public VerifyAllResponse verifyAll(
+            Long batchId,
+            String username
+    ) {
+        Batch batch = batchRepository
+                .findByIdAndCreatedByUsername(batchId, username)
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Batch not found or you do not have permission"
+                        )
+                );
 
         List<Record> records = batch.getRecords();
 
@@ -116,42 +121,63 @@ public class ProducerServiceImpl implements ProducerService {
                     .batchCode(batch.getBatchCode())
                     .batchName(batch.getName())
                     .valid(false)
+                    .message("Batch has no records.")
                     .totalRecords(0)
                     .validRecords(0)
                     .invalidRecords(0)
-                    .anchorStatus(batch.getAnchorStatus().name())
+                    .anchorStatus(
+                            batch.getAnchorStatus() == null
+                                    ? null
+                                    : batch.getAnchorStatus().name()
+                    )
+                    .results(List.of())
                     .build();
         }
 
-        int validCount = 0;
+        /*
+         * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+         * Không đọc plaintext trực tiếp từ PostgreSQL.
+         *
+         * Chỉ truyền recordKey; VerifyService sẽ:
+         * 1. Lấy ciphertext từ IPFS nếu record riêng tư.
+         * 2. Giải mã AES-GCM với đúng AAD.
+         * 3. Tính lại salted leaf.
+         * 4. Xác minh Merkle proof.
+         */
+        List<VerifyResponse> results = records.stream()
+                .map(record -> {
+                    VerifyRequest request = new VerifyRequest();
+                    request.setBatchId(batch.getId());
+                    request.setRecordKey(record.getRecordKey());
 
-        for (Record record : records) {
-            try {
-                VerifyRequest request = new VerifyRequest();
-                request.setBatchId(batch.getId());
-                request.setRawJson(record.getRawJson());
+                    return verifyService.verify(request);
+                })
+                .toList();
 
-                VerifyResponse result = verifyService.verify(request);
+        int validCount = (int) results.stream()
+                .filter(VerifyResponse::isValid)
+                .count();
 
-                if (result.isValid()) {
-                    validCount++;
-                }
-            } catch (Exception e) {
-                // coi như invalid
-            }
-        }
-
-        int total = records.size();
-        int invalid = total - validCount;
+        int totalRecords = results.size();
+        int invalidCount = totalRecords - validCount;
 
         return VerifyAllResponse.builder()
                 .batchId(batch.getId())
                 .batchCode(batch.getBatchCode())
-                .totalRecords(total)
+                .batchName(batch.getName())
+                .valid(invalidCount == 0)
+                .message(invalidCount == 0
+                        ? "All records are valid."
+                        : "Some records are invalid.")
+                .totalRecords(totalRecords)
                 .validRecords(validCount)
-                .invalidRecords(invalid)
-                .valid(invalid == 0)
-                .anchorStatus(batch.getAnchorStatus().name())
+                .invalidRecords(invalidCount)
+                .anchorStatus(
+                        batch.getAnchorStatus() == null
+                                ? null
+                                : batch.getAnchorStatus().name()
+                )
+                .results(results)
                 .build();
     }
 

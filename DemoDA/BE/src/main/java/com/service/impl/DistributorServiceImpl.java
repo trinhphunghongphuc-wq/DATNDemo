@@ -110,7 +110,17 @@ public class DistributorServiceImpl implements DistributorService {
 
             RecordRequest recordRequest = new RecordRequest();
             recordRequest.setRecordType(RecordType.TRANSPORT);
-            recordRequest.setRawJson(objectMapper.writeValueAsString(transportPayload));
+            recordRequest.setRawJson(
+                    objectMapper.writeValueAsString(transportPayload)
+            );
+
+            /*
+             * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+             * Dữ liệu GPS, phương tiện và cảm biến là dữ liệu riêng tư.
+             * RecordService sẽ mã hóa payload bằng AES-256-GCM
+             * trước khi upload lên IPFS.
+             */
+            recordRequest.setPrivateData(true);
 
             batch.setStatus(BatchStatus.IN_DISTRIBUTION);
             batchRepository.save(batch);
