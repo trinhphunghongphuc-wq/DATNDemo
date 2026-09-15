@@ -73,26 +73,46 @@ public class IpfsServiceImpl implements IpfsService {
     @Override
     public String getJson(String cid) {
         if (cid == null || cid.isBlank()) {
-            throw new IllegalArgumentException("CID cannot be blank");
+            throw new IllegalArgumentException(
+                    "CID cannot be blank"
+            );
         }
 
         try {
-            String json = restClient.post()
+            /*
+             * Kubo /api/v0/cat thường trả application/octet-stream.
+             * Đọc dưới dạng byte[] rồi chuyển UTF-8 sẽ ổn định hơn
+             * so với yêu cầu RestClient chuyển trực tiếp thành String.
+             */
+            byte[] content = restClient.post()
                     .uri(uriBuilder -> uriBuilder
                             .path("/api/v0/cat")
                             .queryParam("arg", cid.trim())
                             .build())
                     .retrieve()
-                    .body(String.class);
+                    .body(byte[].class);
 
-            if (json == null || json.isBlank()) {
-                throw new IllegalStateException("IPFS returned empty content for CID: " + cid);
+            if (content == null || content.length == 0) {
+                throw new IllegalStateException(
+                        "IPFS returned empty content for CID: " + cid
+                );
             }
-            return json;
+
+            return new String(
+                    content,
+                    StandardCharsets.UTF_8
+            );
+
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
-            throw new IllegalStateException("Cannot read JSON from IPFS for CID: " + cid, e);
+            throw new IllegalStateException(
+                    "Cannot read JSON from IPFS for CID: "
+                            + cid
+                            + ". Cause: "
+                            + e.getMessage(),
+                    e
+            );
         }
     }
 

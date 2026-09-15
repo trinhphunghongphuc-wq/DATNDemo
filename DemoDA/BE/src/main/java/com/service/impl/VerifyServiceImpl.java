@@ -1,10 +1,12 @@
 package com.service.impl;
 
+import com.dto.verify.MerkleProofResponse;
 import com.dto.verify.VerifyAllResponse;
 import com.dto.verify.VerifyRequest;
 import com.dto.verify.VerifyResponse;
 import com.entity.Batch;
 import com.entity.Record;
+import com.enums.RecordStage;
 import com.repository.BatchRepository;
 import com.repository.RecordRepository;
 import com.service.DataEncryptionService;
@@ -15,7 +17,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 public class VerifyServiceImpl implements VerifyService {
@@ -55,20 +56,19 @@ public class VerifyServiceImpl implements VerifyService {
         if (request.getBatchId() == null) {
             return invalidResponse(
                     null,
-                    null,
+                    request.getRecordKey(),
                     "batchId must not be null"
             );
         }
 
-        /*
-         * Nếu caller không truyền plaintext nhưng có recordKey,
-         * hệ thống tự tải nội dung từ IPFS.
-         *
-         * Public record: đọc JSON trực tiếp.
-         * Private record: tải ciphertext rồi giải mã AES-GCM.
-         */
         String verificationRawJson = request.getRawJson();
 
+        /*
+         * Nếu không truyền plaintext, hệ thống tự lấy dữ liệu:
+         *
+         * Public record: lấy rawJson từ PostgreSQL.
+         * Private record: lấy ciphertext từ IPFS và giải mã AES-GCM.
+         */
         if (verificationRawJson == null
                 || verificationRawJson.isBlank()
                 || isPrivatePlaceholder(verificationRawJson)) {
@@ -111,9 +111,8 @@ public class VerifyServiceImpl implements VerifyService {
         }
 
         /*
-         * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
-         *
          * Hỗ trợ đồng thời:
+         *
          * V1 = Keccak-256(canonicalJson)
          * V2 = Keccak-256(saltBytes || canonicalJsonBytes)
          */
@@ -139,7 +138,8 @@ public class VerifyServiceImpl implements VerifyService {
                                 candidate
                         );
 
-                if (calculatedLeafHash.equalsIgnoreCase(
+                if (candidate.getLeafHash() != null
+                        && calculatedLeafHash.equalsIgnoreCase(
                         candidate.getLeafHash()
                 )) {
                     targetRecord = candidate;
@@ -177,69 +177,85 @@ public class VerifyServiceImpl implements VerifyService {
             );
         }
 
-        if (targetRecord.getLeafIndex() == null) {
+        MerkleVerificationContext merkleContext;
+
+        try {
+            merkleContext = resolveMerkleContext(
+                    batch,
+                    targetRecord
+            );
+        } catch (Exception e) {
             return invalidResponse(
                     batch.getId(),
                     targetRecord.getRecordKey(),
-                    "Record leafIndex is missing."
+                    "Cannot resolve Merkle context: "
+                            + e.getMessage()
             );
         }
 
-        if (batch.getMerkleRoot() == null
-                || batch.getMerkleRoot().isBlank()) {
+        if (merkleContext.expectedRoot() == null
+                || merkleContext.expectedRoot().isBlank()) {
             return invalidResponse(
                     batch.getId(),
                     targetRecord.getRecordKey(),
-                    "Batch merkleRoot is missing."
+                    "Merkle root is missing for record stage."
             );
         }
 
-        List<Record> batchRecords =
-                recordRepository.findByBatchIdOrderByLeafIndexAsc(
-                        batch.getId()
-                );
-
-        if (batchRecords.isEmpty()) {
+        if (merkleContext.records().isEmpty()) {
             return invalidResponse(
                     batch.getId(),
                     targetRecord.getRecordKey(),
-                    "Batch has no records."
+                    "Merkle stage has no records."
             );
         }
 
-        List<String> leafHashes = batchRecords.stream()
+        List<String> leafHashes = merkleContext.records()
+                .stream()
                 .map(Record::getLeafHash)
-                .collect(Collectors.toList());
+                .toList();
 
         List<String> proof;
         boolean valid;
 
         try {
+            /*
+             * Proof được tạo tại thời điểm yêu cầu.
+             * Không lưu sẵn proof trong PostgreSQL hoặc IPFS.
+             */
             proof = merkleService.buildMerkleProof(
                     leafHashes,
-                    targetRecord.getLeafIndex()
+                    merkleContext.proofIndex()
             );
 
             valid = merkleService.verifyProof(
                     targetRecord.getLeafHash(),
                     proof,
-                    batch.getMerkleRoot(),
-                    targetRecord.getLeafIndex()
+                    merkleContext.expectedRoot(),
+                    merkleContext.proofIndex()
             );
         } catch (Exception e) {
             return VerifyResponse.builder()
                     .valid(false)
-                    .message("Verification error: " + e.getMessage())
+                    .message(
+                            "Verification error: "
+                                    + e.getMessage()
+                    )
                     .batchId(batch.getId())
                     .batchCode(batch.getBatchCode())
                     .batchName(batch.getName())
                     .recordId(targetRecord.getId())
                     .recordKey(targetRecord.getRecordKey())
-                    .merkleRoot(batch.getMerkleRoot())
+                    .merkleRoot(merkleContext.expectedRoot())
                     .chainTxHash(batch.getChainTxHash())
                     .anchorStatus(batch.getAnchorStatus())
                     .leafHash(targetRecord.getLeafHash())
-                    .leafIndex(targetRecord.getLeafIndex())
+
+                    /*
+                     * leafIndex trong VerifyResponse là index thực tế
+                     * dùng để tạo và xác minh proof.
+                     */
+                    .leafIndex(merkleContext.proofIndex())
                     .verifiedAt(LocalDateTime.now())
                     .build();
         }
@@ -248,17 +264,17 @@ public class VerifyServiceImpl implements VerifyService {
                 .valid(valid)
                 .message(valid
                         ? "Record is valid. Data integrity verified successfully."
-                        : "Verification failed. Proof does not match Merkle root.")
+                        : "Verification failed. Proof does not match stage Merkle root.")
                 .batchId(batch.getId())
                 .batchCode(batch.getBatchCode())
                 .batchName(batch.getName())
                 .recordId(targetRecord.getId())
                 .recordKey(targetRecord.getRecordKey())
-                .merkleRoot(batch.getMerkleRoot())
+                .merkleRoot(merkleContext.expectedRoot())
                 .chainTxHash(batch.getChainTxHash())
                 .anchorStatus(batch.getAnchorStatus())
                 .leafHash(targetRecord.getLeafHash())
-                .leafIndex(targetRecord.getLeafIndex())
+                .leafIndex(merkleContext.proofIndex())
                 .proof(proof)
                 .verifiedAt(LocalDateTime.now())
                 .build();
@@ -274,7 +290,9 @@ public class VerifyServiceImpl implements VerifyService {
                 );
 
         List<Record> records =
-                recordRepository.findByBatchIdOrderByLeafIndexAsc(batchId);
+                recordRepository.findByBatchIdOrderByLeafIndexAsc(
+                        batchId
+                );
 
         if (records.isEmpty()) {
             return VerifyAllResponse.builder()
@@ -286,12 +304,13 @@ public class VerifyServiceImpl implements VerifyService {
                     .totalRecords(0)
                     .validRecords(0)
                     .invalidRecords(0)
+                    .results(List.of())
                     .build();
         }
 
         /*
-         * Không truyền rawJson từ PostgreSQL vì private record
-         * chỉ chứa placeholder. verify() sẽ tự lấy dữ liệu từ IPFS.
+         * Không lấy rawJson trực tiếp từ PostgreSQL.
+         * verify() sẽ tự tải và giải mã dữ liệu khi cần.
          */
         List<VerifyResponse> results = records.stream()
                 .map(record -> {
@@ -307,24 +326,158 @@ public class VerifyServiceImpl implements VerifyService {
                 })
                 .toList();
 
-        long validCount = results.stream()
+        int validCount = (int) results.stream()
                 .filter(VerifyResponse::isValid)
                 .count();
+
+        int invalidCount =
+                results.size() - validCount;
 
         return VerifyAllResponse.builder()
                 .batchId(batch.getId())
                 .batchCode(batch.getBatchCode())
                 .batchName(batch.getName())
-                .valid(validCount == results.size())
-                .message(validCount == results.size()
+                .valid(invalidCount == 0)
+                .message(invalidCount == 0
                         ? "All records are valid."
                         : "Some records are invalid.")
                 .totalRecords(results.size())
-                .validRecords((int) validCount)
-                .invalidRecords(
-                        results.size() - (int) validCount
-                )
+                .validRecords(validCount)
+                .invalidRecords(invalidCount)
                 .results(results)
+                .build();
+    }
+
+    @Override
+    public MerkleProofResponse generateMerkleProof(
+            Long batchId,
+            String recordKey
+    ) {
+        if (batchId == null) {
+            throw new IllegalArgumentException(
+                    "batchId must not be null"
+            );
+        }
+
+        if (recordKey == null || recordKey.isBlank()) {
+            throw new IllegalArgumentException(
+                    "recordKey must not be blank"
+            );
+        }
+
+        Batch batch = batchRepository.findById(batchId)
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Batch not found with id: "
+                                        + batchId
+                        )
+                );
+
+        Record targetRecord = recordRepository
+                .findByBatchIdAndRecordKey(
+                        batchId,
+                        recordKey
+                )
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Record not found with batchId "
+                                        + batchId
+                                        + " and recordKey "
+                                        + recordKey
+                        )
+                );
+
+        if (targetRecord.getLeafHash() == null
+                || targetRecord.getLeafHash().isBlank()) {
+            throw new IllegalStateException(
+                    "Record leafHash is missing"
+            );
+        }
+
+        /*
+         * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+         * Xác định đúng cây Merkle theo giai đoạn của record.
+         *
+         * Producer, Distributor và Retailer sử dụng các cây riêng,
+         * vì vậy proof của stage cũ không bị thay đổi khi stage mới
+         * thêm record.
+         */
+        MerkleVerificationContext merkleContext =
+                resolveMerkleContext(
+                        batch,
+                        targetRecord
+                );
+
+        if (merkleContext.expectedRoot() == null
+                || merkleContext.expectedRoot().isBlank()) {
+            throw new IllegalStateException(
+                    "Merkle root is missing for record stage"
+            );
+        }
+
+        if (merkleContext.records().isEmpty()) {
+            throw new IllegalStateException(
+                    "Merkle stage has no records"
+            );
+        }
+
+        int proofIndex = merkleContext.proofIndex();
+
+        if (proofIndex < 0
+                || proofIndex >= merkleContext.records().size()) {
+            throw new IllegalStateException(
+                    "Invalid Merkle leaf index: "
+                            + proofIndex
+            );
+        }
+
+        List<String> leafHashes =
+                merkleContext.records()
+                        .stream()
+                        .map(Record::getLeafHash)
+                        .toList();
+
+        if (leafHashes.stream().anyMatch(
+                hash -> hash == null || hash.isBlank()
+        )) {
+            throw new IllegalStateException(
+                    "Merkle stage contains a record without leafHash"
+            );
+        }
+
+        /*
+         * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+         * Proof chỉ được sinh tại thời điểm API này được gọi.
+         *
+         * Proof không được lưu trong PostgreSQL hoặc IPFS,
+         * giúp giảm dung lượng lưu trữ và tránh proof bị lỗi thời.
+         */
+        List<String> proof =
+                merkleService.buildMerkleProof(
+                        leafHashes,
+                        proofIndex
+                );
+
+        /*
+         * Backend tự kiểm tra proof trước khi trả cho client.
+         */
+        boolean valid = merkleService.verifyProof(
+                targetRecord.getLeafHash(),
+                proof,
+                merkleContext.expectedRoot(),
+                proofIndex
+        );
+
+        return MerkleProofResponse.builder()
+                .batchId(batch.getId())
+                .recordKey(targetRecord.getRecordKey())
+                .recordStage(targetRecord.getRecordStage())
+                .leafHash(targetRecord.getLeafHash())
+                .stageLeafIndex(proofIndex)
+                .stageRoot(merkleContext.expectedRoot())
+                .proof(proof)
+                .proofSize(proof.size())
+                .valid(valid)
                 .build();
     }
 
@@ -336,8 +489,73 @@ public class VerifyServiceImpl implements VerifyService {
         request.setBatchId(batchId);
         request.setRecordKey(recordKey);
 
-        // verify() tự tải và giải mã nội dung khi cần.
         return verify(request);
+    }
+
+    /*
+     * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+     *
+     * Mỗi giai đoạn có cây Merkle độc lập. Khi xác minh:
+     * - Producer dùng producerMerkleRoot.
+     * - Distributor dùng distributorMerkleRoot.
+     * - Retailer dùng retailerMerkleRoot.
+     *
+     * Điều này ngăn record của stage mới làm thay đổi proof
+     * của các stage đã hoàn thành.
+     */
+    private MerkleVerificationContext resolveMerkleContext(
+            Batch batch,
+            Record targetRecord
+    ) {
+        RecordStage stage = targetRecord.getRecordStage();
+        Integer stageLeafIndex =
+                targetRecord.getStageLeafIndex();
+
+        if (stage != null && stageLeafIndex != null) {
+            List<Record> stageRecords = recordRepository
+                    .findByBatchIdAndRecordStageOrderByStageLeafIndexAsc(
+                            batch.getId(),
+                            stage
+                    );
+
+            String stageRoot = switch (stage) {
+                case PRODUCER ->
+                        batch.getProducerMerkleRoot();
+
+                case DISTRIBUTOR ->
+                        batch.getDistributorMerkleRoot();
+
+                case RETAILER ->
+                        batch.getRetailerMerkleRoot();
+            };
+
+            return new MerkleVerificationContext(
+                    stageRecords,
+                    stageLeafIndex,
+                    stageRoot
+            );
+        }
+
+        /*
+         * Tương thích record cũ của Giai đoạn 1:
+         * nếu chưa có recordStage/stageLeafIndex thì dùng cây toàn batch.
+         */
+        if (targetRecord.getLeafIndex() == null) {
+            throw new IllegalStateException(
+                    "Record leaf index is missing"
+            );
+        }
+
+        List<Record> legacyRecords =
+                recordRepository.findByBatchIdOrderByLeafIndexAsc(
+                        batch.getId()
+                );
+
+        return new MerkleVerificationContext(
+                legacyRecords,
+                targetRecord.getLeafIndex(),
+                batch.getMerkleRoot()
+        );
     }
 
     /*
@@ -350,7 +568,8 @@ public class VerifyServiceImpl implements VerifyService {
         }
 
         if (record.getEncryptionVersion() == null
-                || record.getEncryptionVersion() != AES_GCM_VERSION) {
+                || record.getEncryptionVersion()
+                != AES_GCM_VERSION) {
             throw new IllegalStateException(
                     "Unsupported encryption version"
             );
@@ -366,10 +585,10 @@ public class VerifyServiceImpl implements VerifyService {
         String encryptedEnvelope =
                 ipfsService.getJson(record.getIpfsCid());
 
-        String context = buildEncryptionContext(record);
+        String context =
+                buildEncryptionContext(record);
 
         /*
-         * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
          * AES-GCM kiểm tra authentication tag và AAD.
          * Sai khóa, sai context hoặc ciphertext bị sửa đều thất bại.
          */
@@ -383,9 +602,10 @@ public class VerifyServiceImpl implements VerifyService {
             String rawJson,
             Record record
     ) {
-        Integer hashVersion = record.getHashVersion();
+        Integer hashVersion =
+                record.getHashVersion();
 
-        // Record V1 của Giai đoạn 1.
+        // Record V1 cũ, chưa sử dụng salt.
         if (hashVersion == null || hashVersion < 2) {
             return merkleService.hashRecord(rawJson);
         }
@@ -398,19 +618,22 @@ public class VerifyServiceImpl implements VerifyService {
             );
         }
 
-        // Record V2 có salted leaf.
         return merkleService.hashRecord(
                 rawJson,
                 record.getLeafSalt()
         );
     }
 
-    private String buildEncryptionContext(Record record) {
+    private String buildEncryptionContext(
+            Record record
+    ) {
         return "batch:" + record.getBatch().getId()
                 + "|record:" + record.getRecordKey();
     }
 
-    private boolean isPrivatePlaceholder(String rawJson) {
+    private boolean isPrivatePlaceholder(
+            String rawJson
+    ) {
         return rawJson.contains("\"privateData\":true")
                 && rawJson.contains("\"encrypted\":true");
     }
@@ -427,5 +650,12 @@ public class VerifyServiceImpl implements VerifyService {
                 .recordKey(recordKey)
                 .verifiedAt(LocalDateTime.now())
                 .build();
+    }
+
+    private record MerkleVerificationContext(
+            List<Record> records,
+            int proofIndex,
+            String expectedRoot
+    ) {
     }
 }
