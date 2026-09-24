@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import com.dto.verify.MerkleProofResponse;
+import com.dto.verify.OnChainVerificationResponse;
 
 @RestController
 @RequestMapping("/api/verify")
@@ -36,6 +37,24 @@ public class VerifyController {
             @PathVariable String recordKey
     ) {
         return verifyService.generateMerkleProof(
+                batchId,
+                recordKey
+        );
+    }
+
+    /*
+     * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+     * Xác minh dữ liệu off-chain bằng Merkle proof
+     * và stage root bất biến trên blockchain.
+     */
+    @GetMapping(
+            "/batches/{batchId}/records/{recordKey}/verify-on-chain"
+    )
+    public OnChainVerificationResponse verifyOnChain(
+            @PathVariable Long batchId,
+            @PathVariable String recordKey
+    ) {
+        return verifyService.verifyRecordOnChain(
                 batchId,
                 recordKey
         );

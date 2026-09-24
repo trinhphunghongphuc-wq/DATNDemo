@@ -4,16 +4,19 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+      "compile": "hardhat compile",
+      "test": "hardhat test"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^4.0.6",
+    "@nomicfoundation/hardhat-mocha": "^3.1.0",
     "@nomicfoundation/hardhat-toolbox": "^7.0.0",
     "ethers": "^6.16.0",
-    "hardhat": "^3.1.12"
+    "hardhat": "^3.1.12",
+    "mocha": "^11.8.0"
   },
   "dependencies": {
     "adm-zip": "^0.4.16",

@@ -2,6 +2,7 @@ package com.service.impl;
 
 import com.dto.batch.AdminBatchListResponse;
 import com.dto.batch.BatchDetailResponse;
+import com.dto.blockchain.StageAnchorResponse;
 import com.dto.record.AdminRecordDetailResponse;
 import com.dto.record.RecentRecordResponse;
 import com.dto.record.RecordItemResponse;
@@ -19,9 +20,19 @@ import com.repository.UserRepository;
 import com.service.AdminService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import com.entity.StageAnchorTransaction;
+import com.repository.StageAnchorTransactionRepository;
+import com.dto.blockchain.StageAnchorResponse;
+import java.time.LocalDateTime;
 
+
+import com.enums.RecordStage;
+import org.springframework.transaction.annotation.Transactional;
+import org.web3j.protocol.core.methods.response.TransactionReceipt;
+
+import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
+
 
 @Service
 @RequiredArgsConstructor
@@ -31,6 +42,8 @@ public class AdminServiceImpl implements AdminService {
     private final RecordRepository recordRepository;
     private final UserRepository userRepository;
     private final BlockchainConnectionService blockchainConnectionService;
+    private final StageAnchorTransactionRepository
+            stageAnchorTransactionRepository;
 
     @Override
     public List<AdminBatchListResponse> getAllBatches() {
@@ -151,31 +164,148 @@ public class AdminServiceImpl implements AdminService {
                 .toList();
     }
 
-    @Override
-    public AdminBatchListResponse anchorBatchRoot(Long batchId) throws Exception {
-        Batch batch = batchRepository.findById(batchId)
-                .orElseThrow(() -> new RuntimeException("Batch not found with id: " + batchId));
 
-        if (batch.getMerkleRoot() == null || batch.getMerkleRoot().isBlank()) {
-            throw new RuntimeException("Batch does not have merkleRoot");
+
+    @Override
+    @Transactional
+    public AdminBatchListResponse anchorBatchStageRoot(
+            Long batchId,
+            RecordStage stage
+    ) {
+        if (stage == null) {
+            throw new IllegalArgumentException(
+                    "Record stage is required"
+            );
         }
 
-        if (batch.getAnchorStatus() == AnchorStatus.ANCHORED) {
-            throw new RuntimeException("Batch already anchored");
+        Batch batch = batchRepository.findById(batchId)
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Batch not found with id: "
+                                        + batchId
+                        )
+                );
+
+        /*
+         * Kiểm tra PostgreSQL trước khi gửi transaction,
+         * tránh tốn gas cho một stage đã được anchor.
+         */
+        boolean alreadyAnchored =
+                stageAnchorTransactionRepository
+                        .existsByBatch_IdAndRecordStage(
+                                batchId,
+                                stage
+                        );
+
+        if (alreadyAnchored) {
+            throw new IllegalStateException(
+                    stage + " root is already anchored"
+            );
+        }
+
+        String stageRoot = resolveStageRoot(
+                batch,
+                stage
+        );
+
+        if (stageRoot == null || stageRoot.isBlank()) {
+            throw new IllegalStateException(
+                    stage
+                            + " Merkle root has not been generated"
+            );
         }
 
         try {
-            String txHash = blockchainConnectionService.setRoot(batch.getId(), batch.getMerkleRoot());
-            batch.setChainTxHash(txHash);
-            batch.setAnchorStatus(AnchorStatus.ANCHORED);
-            batchRepository.save(batch);
-        } catch (Exception e) {
-            batch.setAnchorStatus(AnchorStatus.ANCHOR_FAILED);
-            batchRepository.save(batch);
-            throw new RuntimeException("Failed to anchor batch root: " + e.getMessage(), e);
-        }
+            TransactionReceipt receipt =
+                    blockchainConnectionService
+                            .anchorStageRoot(
+                                    batch.getId(),
+                                    stage,
+                                    stageRoot
+                            );
 
-        return mapBatchToAdminResponse(batch);
+            if (!receipt.isStatusOK()) {
+                throw new IllegalStateException(
+                        "Blockchain transaction failed"
+                );
+            }
+
+            /*
+             * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+             * Lưu bằng chứng anchor riêng cho từng stage.
+             *
+             * Các số liệu transaction hash, block number và gas used
+             * sẽ được dùng trong phần đánh giá chi phí.
+             */
+            StageAnchorTransaction anchorTransaction =
+                    StageAnchorTransaction.builder()
+                            .batch(batch)
+                            .recordStage(stage)
+                            .transactionHash(
+                                    receipt.getTransactionHash()
+                            )
+                            .blockNumber(
+                                    receipt.getBlockNumber()
+                            )
+                            .gasUsed(
+                                    receipt.getGasUsed()
+                            )
+                            .anchoredAt(
+                                    LocalDateTime.now()
+                            )
+                            .build();
+
+            stageAnchorTransactionRepository.save(
+                    anchorTransaction
+            );
+
+            /*
+             * Giữ lại dữ liệu legacy để giao diện cũ
+             * vẫn đọc được transaction gần nhất.
+             */
+            batch.setChainTxHash(
+                    receipt.getTransactionHash()
+            );
+
+            batch.setAnchorStatus(
+                    AnchorStatus.ANCHORED
+            );
+
+            batchRepository.save(batch);
+
+            return mapBatchToAdminResponse(batch);
+
+        } catch (Exception exception) {
+            batch.setAnchorStatus(
+                    AnchorStatus.ANCHOR_FAILED
+            );
+
+            batchRepository.save(batch);
+
+            throw new RuntimeException(
+                    "Failed to anchor "
+                            + stage
+                            + " Merkle root: "
+                            + exception.getMessage(),
+                    exception
+            );
+        }
+    }
+
+    private String resolveStageRoot(
+            Batch batch,
+            RecordStage stage
+    ) {
+        return switch (stage) {
+            case PRODUCER ->
+                    batch.getProducerMerkleRoot();
+
+            case DISTRIBUTOR ->
+                    batch.getDistributorMerkleRoot();
+
+            case RETAILER ->
+                    batch.getRetailerMerkleRoot();
+        };
     }
 
     @Override
@@ -187,6 +317,41 @@ public class AdminServiceImpl implements AdminService {
         return toBatchDetailResponse(batch);
     }
 
+    @Override
+    public List<StageAnchorResponse> getStageAnchors(
+            Long batchId
+    ) {
+        if (!batchRepository.existsById(batchId)) {
+            throw new RuntimeException(
+                    "Batch not found with id: " + batchId
+            );
+        }
+
+        return stageAnchorTransactionRepository
+                .findByBatch_IdOrderByRecordStageAsc(batchId)
+                .stream()
+                .sorted(
+                        Comparator.comparingInt(
+                                anchor ->
+                                        anchor.getRecordStage()
+                                                .ordinal()
+                        )
+                )
+                .map(anchor ->
+                        StageAnchorResponse.builder()
+                                .id(anchor.getId())
+                                .batchId(anchor.getBatch().getId())
+                                .recordStage(anchor.getRecordStage())
+                                .transactionHash(
+                                        anchor.getTransactionHash()
+                                )
+                                .blockNumber(anchor.getBlockNumber())
+                                .gasUsed(anchor.getGasUsed())
+                                .anchoredAt(anchor.getAnchoredAt())
+                                .build()
+                )
+                .toList();
+    }
 
 
     private BatchDetailResponse toBatchDetailResponse(Batch batch) {

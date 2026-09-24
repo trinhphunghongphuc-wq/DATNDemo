@@ -16,7 +16,7 @@ import com.service.RecordService;
 import com.service.StageMerkleService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import com.repository.StageAnchorTransactionRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -44,19 +44,22 @@ public class RecordServiceImpl implements RecordService {
     private final IpfsService ipfsService;
     private final StageMerkleService stageMerkleService;
     private final DataEncryptionService dataEncryptionService;
+    private final StageAnchorTransactionRepository
+            stageAnchorTransactionRepository;
 
     public RecordServiceImpl(
             RecordRepository recordRepository,
             MerkleService merkleService,
             IpfsService ipfsService,
             StageMerkleService stageMerkleService,
-            DataEncryptionService dataEncryptionService
+            DataEncryptionService dataEncryptionService, StageAnchorTransactionRepository stageAnchorTransactionRepository
     ) {
         this.recordRepository = recordRepository;
         this.merkleService = merkleService;
         this.ipfsService = ipfsService;
         this.stageMerkleService = stageMerkleService;
         this.dataEncryptionService = dataEncryptionService;
+        this.stageAnchorTransactionRepository = stageAnchorTransactionRepository;
     }
 
     private void validateStageCanAddRecord(
@@ -95,7 +98,7 @@ public class RecordServiceImpl implements RecordService {
             List<RecordRequest> requests,
             Role role
     ) {
-        validateRecordWritable(batch);
+        validateBatchRequired(batch);
 
         if (requests == null || requests.isEmpty()) {
             return List.of();
@@ -125,6 +128,15 @@ public class RecordServiceImpl implements RecordService {
 
             // Chặn sai role/state trước khi tạo dữ liệu trên IPFS.
             validateStageCanAddRecord(batch, recordStage);
+
+            /*
+             * Kiểm tra trước khi hash, mã hóa và upload IPFS,
+             * tránh tạo dữ liệu thừa nếu stage đã bị khóa.
+             */
+            validateStageNotAnchored(
+                    batch,
+                    recordStage
+            );
 
             String recordKey =
                     generateRecordKey(request.getRecordType());
@@ -314,17 +326,48 @@ public class RecordServiceImpl implements RecordService {
         }
     }
 
-    private void validateRecordWritable(Batch batch) {
+    private void validateBatchRequired(
+            Batch batch
+    ) {
         if (batch == null) {
             throw new IllegalArgumentException(
                     "Batch is required"
             );
         }
 
-        if (batch.getChainTxHash() != null
-                && !batch.getChainTxHash().isBlank()) {
+        if (batch.getId() == null) {
+            throw new IllegalArgumentException(
+                    "Batch must be saved before adding records"
+            );
+        }
+    }
+
+    /*
+     * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+     * Chỉ khóa stage đã được anchor thay vì khóa toàn bộ batch.
+     *
+     * Ví dụ:
+     * - Producer đã anchor: không thể thêm record Producer.
+     * - Distributor vẫn có thể thêm record vận chuyển.
+     * - Sau khi Distributor anchor: chỉ Retailer được tiếp tục.
+     */
+    private void validateStageNotAnchored(
+            Batch batch,
+            RecordStage recordStage
+    ) {
+        boolean anchored =
+                stageAnchorTransactionRepository
+                        .existsByBatch_IdAndRecordStage(
+                                batch.getId(),
+                                recordStage
+                        );
+
+        if (anchored) {
             throw new IllegalStateException(
-                    "Cannot add records to anchored batch"
+                    "Cannot add "
+                            + recordStage
+                            + " record because this stage "
+                            + "has already been anchored"
             );
         }
     }

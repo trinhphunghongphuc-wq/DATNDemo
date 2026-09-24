@@ -1,9 +1,6 @@
 package com.service.impl;
 
-import com.dto.verify.MerkleProofResponse;
-import com.dto.verify.VerifyAllResponse;
-import com.dto.verify.VerifyRequest;
-import com.dto.verify.VerifyResponse;
+import com.dto.verify.*;
 import com.entity.Batch;
 import com.entity.Record;
 import com.enums.RecordStage;
@@ -14,7 +11,7 @@ import com.service.IpfsService;
 import com.service.MerkleService;
 import com.service.VerifyService;
 import org.springframework.stereotype.Service;
-
+import com.dto.verify.OnChainVerificationResponse;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -28,19 +25,22 @@ public class VerifyServiceImpl implements VerifyService {
     private final BatchRepository batchRepository;
     private final IpfsService ipfsService;
     private final DataEncryptionService dataEncryptionService;
+    private final BlockchainConnectionService
+            blockchainConnectionService;
 
     public VerifyServiceImpl(
             RecordRepository recordRepository,
             MerkleService merkleService,
             BatchRepository batchRepository,
             IpfsService ipfsService,
-            DataEncryptionService dataEncryptionService
+            DataEncryptionService dataEncryptionService, BlockchainConnectionService blockchainConnectionService
     ) {
         this.recordRepository = recordRepository;
         this.merkleService = merkleService;
         this.batchRepository = batchRepository;
         this.ipfsService = ipfsService;
         this.dataEncryptionService = dataEncryptionService;
+        this.blockchainConnectionService = blockchainConnectionService;
     }
 
     @Override
@@ -479,6 +479,217 @@ public class VerifyServiceImpl implements VerifyService {
                 .proofSize(proof.size())
                 .valid(valid)
                 .build();
+    }
+
+    @Override
+    public OnChainVerificationResponse verifyRecordOnChain(
+            Long batchId,
+            String recordKey
+    ) {
+        if (batchId == null) {
+            throw new IllegalArgumentException(
+                    "batchId must not be null"
+            );
+        }
+
+        if (recordKey == null || recordKey.isBlank()) {
+            throw new IllegalArgumentException(
+                    "recordKey must not be blank"
+            );
+        }
+
+        /*
+         * Bước 1:
+         * Tải plaintext hoặc giải mã AES-GCM,
+         * sau đó tính lại salted leaf hash.
+         */
+        VerifyRequest verifyRequest =
+                new VerifyRequest();
+
+        verifyRequest.setBatchId(batchId);
+        verifyRequest.setRecordKey(recordKey);
+
+        VerifyResponse dataVerification =
+                verify(verifyRequest);
+
+        /*
+         * Bước 2:
+         * Proof chỉ được sinh tại thời điểm có yêu cầu.
+         */
+        MerkleProofResponse merkleProof =
+                generateMerkleProof(
+                        batchId,
+                        recordKey
+                );
+
+        if (merkleProof.getRecordStage() == null) {
+            return buildFailedOnChainResponse(
+                    merkleProof,
+                    dataVerification.isValid(),
+                    "Legacy record does not have recordStage"
+            );
+        }
+
+        String onChainRoot;
+
+        boolean rootMatchesBlockchain;
+        boolean contractProofValid;
+
+        try {
+            /*
+             * Bước 3:
+             * Đọc root độc lập từ smart contract.
+             */
+            onChainRoot =
+                    blockchainConnectionService
+                            .getStageRoot(
+                                    batchId,
+                                    merkleProof.getRecordStage()
+                            );
+
+            rootMatchesBlockchain =
+                    normalizeHex(onChainRoot)
+                            .equalsIgnoreCase(
+                                    normalizeHex(
+                                            merkleProof.getStageRoot()
+                                    )
+                            );
+
+            /*
+             * Bước 4:
+             * Đưa leaf, proof và stageLeafIndex vào
+             * smart contract để xác minh on-chain.
+             */
+            contractProofValid =
+                    blockchainConnectionService
+                            .verifyStageRecord(
+                                    batchId,
+                                    merkleProof.getRecordStage(),
+                                    merkleProof.getLeafHash(),
+                                    merkleProof.getProof(),
+                                    merkleProof.getStageLeafIndex()
+                            );
+
+        } catch (Exception exception) {
+            return OnChainVerificationResponse.builder()
+                    .batchId(batchId)
+                    .recordKey(recordKey)
+                    .recordStage(
+                            merkleProof.getRecordStage()
+                    )
+                    .leafHash(
+                            merkleProof.getLeafHash()
+                    )
+                    .stageLeafIndex(
+                            merkleProof.getStageLeafIndex()
+                    )
+                    .proof(merkleProof.getProof())
+                    .databaseStageRoot(
+                            merkleProof.getStageRoot()
+                    )
+                    .dataValid(
+                            dataVerification.isValid()
+                    )
+                    .localProofValid(
+                            merkleProof.isValid()
+                    )
+                    .rootMatchesBlockchain(false)
+                    .contractProofValid(false)
+                    .valid(false)
+                    .message(
+                            "On-chain verification failed: "
+                                    + exception.getMessage()
+                    )
+                    .verifiedAt(LocalDateTime.now())
+                    .build();
+        }
+
+        boolean valid =
+                dataVerification.isValid()
+                        && merkleProof.isValid()
+                        && rootMatchesBlockchain
+                        && contractProofValid;
+
+        return OnChainVerificationResponse.builder()
+                .batchId(batchId)
+                .recordKey(recordKey)
+                .recordStage(
+                        merkleProof.getRecordStage()
+                )
+                .leafHash(
+                        merkleProof.getLeafHash()
+                )
+                .stageLeafIndex(
+                        merkleProof.getStageLeafIndex()
+                )
+                .proof(merkleProof.getProof())
+                .databaseStageRoot(
+                        merkleProof.getStageRoot()
+                )
+                .onChainStageRoot(onChainRoot)
+                .dataValid(
+                        dataVerification.isValid()
+                )
+                .localProofValid(
+                        merkleProof.isValid()
+                )
+                .rootMatchesBlockchain(
+                        rootMatchesBlockchain
+                )
+                .contractProofValid(
+                        contractProofValid
+                )
+                .valid(valid)
+                .message(
+                        valid
+                                ? "Record data and Merkle proof are valid against the on-chain stage root."
+                                : "Record verification failed."
+                )
+                .verifiedAt(LocalDateTime.now())
+                .build();
+    }
+
+    private OnChainVerificationResponse
+    buildFailedOnChainResponse(
+            MerkleProofResponse proof,
+            boolean dataValid,
+            String message
+    ) {
+        return OnChainVerificationResponse.builder()
+                .batchId(proof.getBatchId())
+                .recordKey(proof.getRecordKey())
+                .recordStage(proof.getRecordStage())
+                .leafHash(proof.getLeafHash())
+                .stageLeafIndex(
+                        proof.getStageLeafIndex()
+                )
+                .proof(proof.getProof())
+                .databaseStageRoot(
+                        proof.getStageRoot()
+                )
+                .dataValid(dataValid)
+                .localProofValid(proof.isValid())
+                .rootMatchesBlockchain(false)
+                .contractProofValid(false)
+                .valid(false)
+                .message(message)
+                .verifiedAt(LocalDateTime.now())
+                .build();
+    }
+
+    private String normalizeHex(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        String normalized = value.trim();
+
+        if (normalized.startsWith("0x")
+                || normalized.startsWith("0X")) {
+            normalized = normalized.substring(2);
+        }
+
+        return normalized;
     }
 
     public VerifyResponse verifyRecord(

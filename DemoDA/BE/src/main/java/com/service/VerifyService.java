@@ -5,7 +5,7 @@ import com.dto.verify.MerkleProofResponse;
 import com.dto.verify.VerifyAllResponse;
 import com.dto.verify.VerifyRequest;
 import com.dto.verify.VerifyResponse;
-
+import com.dto.verify.OnChainVerificationResponse;
 public interface VerifyService {
     VerifyResponse verify(VerifyRequest request);
 
@@ -20,6 +20,15 @@ public interface VerifyService {
      * khi cây Merkle của một giai đoạn thay đổi.
      */
     MerkleProofResponse generateMerkleProof(
+            Long batchId,
+            String recordKey
+    );
+
+    /*
+     * Xác minh toàn bộ chuỗi:
+     * dữ liệu -> salted leaf -> proof -> stage root on-chain.
+     */
+    OnChainVerificationResponse verifyRecordOnChain(
             Long batchId,
             String recordKey
     );
