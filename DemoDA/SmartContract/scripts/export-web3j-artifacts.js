@@ -1,41 +1,53 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const artifactPath = path.resolve(
-  "artifacts/contracts/TraceabilityRegistry.sol/TraceabilityRegistry.json"
-);
+const contractNames = [
+  "TraceabilityRegistry",
+  "CertificationBenchmark"
+];
 
-const outputDirectory = path.resolve(
-  "build/web3j"
-);
-
-const artifact = JSON.parse(
-  fs.readFileSync(artifactPath, "utf8")
+const projectRoot = process.cwd();
+const outputDirectory = path.join(
+  projectRoot,
+  "web3j-artifacts"
 );
 
 fs.mkdirSync(outputDirectory, {
-  recursive: true,
+  recursive: true
 });
 
-fs.writeFileSync(
-  path.join(
-    outputDirectory,
-    "TraceabilityRegistry.abi"
-  ),
-  JSON.stringify(artifact.abi),
-  "utf8"
-);
+for (const contractName of contractNames) {
+  const artifactPath = path.join(
+    projectRoot,
+    "artifacts",
+    "contracts",
+    `${contractName}.sol`,
+    `${contractName}.json`
+  );
 
-fs.writeFileSync(
-  path.join(
-    outputDirectory,
-    "TraceabilityRegistry.bin"
-  ),
-  artifact.bytecode.replace(/^0x/, ""),
-  "utf8"
-);
+  const artifact = JSON.parse(
+    fs.readFileSync(artifactPath, "utf8")
+  );
 
-console.log(
-  "Exported ABI and BIN to:",
-  outputDirectory
-);
+  const abiPath = path.join(
+    outputDirectory,
+    `${contractName}.abi`
+  );
+
+  const binPath = path.join(
+    outputDirectory,
+    `${contractName}.bin`
+  );
+
+  fs.writeFileSync(
+    abiPath,
+    JSON.stringify(artifact.abi)
+  );
+
+  fs.writeFileSync(
+    binPath,
+    artifact.bytecode.replace(/^0x/, "")
+  );
+
+  console.log(`Exported ${contractName}`);
+}

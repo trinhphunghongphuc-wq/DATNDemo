@@ -44,3 +44,5 @@ DemoDA/BE/target/
 # IDE
 **/.idea/
 **/*.iml
+
+DemoDA/SmartContract/web3j-artifacts/
