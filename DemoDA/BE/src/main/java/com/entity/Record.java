@@ -5,6 +5,8 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
+import com.enums.RecordStage;
+
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -29,6 +31,11 @@ public class Record {
     //rawJson: dữ liệu gốc của record
     @Column(name = "raw_json", columnDefinition = "TEXT", nullable = false)
     private String rawJson;
+
+    // CID trỏ tới bản JSON đã được lưu off-chain trên IPFS.
+    // Để nullable trong giai đoạn chuyển đổi vì các record cũ chưa có CID.
+    @Column(name = "ipfs_cid", length = 100)
+    private String ipfsCid;
 
     //leafHash: hash của record đó
     @Column(name = "leaf_hash")
@@ -58,5 +65,13 @@ public class Record {
             createdAt = LocalDateTime.now();
         }
     }
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "record_stage")
+    private RecordStage recordStage;
+
+    // Vị trí leaf trong riêng cây Merkle của giai đoạn.
+    @Column(name = "stage_leaf_index")
+    private Integer stageLeafIndex;
 
 }

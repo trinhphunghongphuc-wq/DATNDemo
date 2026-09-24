@@ -52,11 +52,16 @@ public class BatchServiceImpl implements BatchService {
     public BatchResponse createBatch(BatchRequest request, Role role) {
         Batch savedBatch = createBatchEntity(request, role);
 
+        String qrContent = "http://localhost:5173/trace/batch/"
+                + savedBatch.getBatchCode();
+
         return new BatchResponse(
                 savedBatch.getId(),
                 savedBatch.getName(),
+                savedBatch.getBatchCode(),
                 savedBatch.getMerkleRoot(),
-                savedBatch.getChainTxHash()
+                savedBatch.getChainTxHash(),
+                qrContent
         );
     }
 

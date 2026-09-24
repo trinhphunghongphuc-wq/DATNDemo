@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import com.entity.Record;
+import com.enums.RecordStage;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,5 +29,10 @@ public interface RecordRepository extends JpaRepository<com.entity.Record, Long>
     Optional<Record> findByBatchIdAndLeafHash(Long batchId, String leafHash);
     List<Record> findByBatchIdOrderByLeafIndexAsc(Long batchId);
     int countByBatchId(Long batchId);
+    int countByBatchIdAndRecordStage(Long batchId, RecordStage recordStage);
+    List<Record> findByBatchIdAndRecordStageOrderByStageLeafIndexAsc(
+            Long batchId,
+            RecordStage recordStage
+    );
 
 }

@@ -1,6 +1,5 @@
 package com.dto.batch;
 
-import com.entity.User;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -10,19 +9,27 @@ public class BatchResponse {
 
     private Long id;
     private String name;
+    private String batchCode;
     private String merkleRoot;
     private String chainTxHash;
+    private String qrContent;
 
     public BatchResponse() {
     }
 
-    public BatchResponse(Long id, String name, String merkleRoot, String chainTxHash) {
+    public BatchResponse(
+            Long id,
+            String name,
+            String batchCode,
+            String merkleRoot,
+            String chainTxHash,
+            String qrContent
+    ) {
         this.id = id;
         this.name = name;
+        this.batchCode = batchCode;
         this.merkleRoot = merkleRoot;
         this.chainTxHash = chainTxHash;
+        this.qrContent = qrContent;
     }
-
-
-
 }
