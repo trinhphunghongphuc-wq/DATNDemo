@@ -16,15 +16,14 @@ import com.enums.Role;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.repository.BatchRepository;
 import com.repository.VehicleRepository;
+import com.service.DeviceSignatureService;
 import com.service.DistributorService;
 import com.service.RecordService;
 import com.service.VerifyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.web3j.crypto.Hash;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,9 +38,12 @@ public class DistributorServiceImpl implements DistributorService {
     private final VerifyService verifyService;
     private final ObjectMapper objectMapper;
     private final VehicleRepository vehicleRepository;
+    private final DeviceSignatureService deviceSignatureService;
 
     @Override
-    public List<AdminBatchListResponse> getAssignedBatches(Long distributorId) {
+    public List<AdminBatchListResponse> getAssignedBatches(
+            Long distributorId
+    ) {
         return batchRepository.findByDistributorId(distributorId)
                 .stream()
                 .map(this::toBatchListResponse)
@@ -49,77 +51,213 @@ public class DistributorServiceImpl implements DistributorService {
     }
 
     @Override
-    public AdminBatchListResponse receiveBatch(Long batchId, Long distributorId) {
-        Batch batch = getBatchForDistributor(batchId, distributorId);
+    public AdminBatchListResponse receiveBatch(
+            Long batchId,
+            Long distributorId
+    ) {
+        Batch batch = getBatchForDistributor(
+                batchId,
+                distributorId
+        );
 
         if (batch.getAnchorStatus() == AnchorStatus.ANCHORED) {
-            throw new RuntimeException("Cannot receive anchored batch");
+            throw new IllegalStateException(
+                    "Cannot receive anchored batch"
+            );
         }
-
-        if (batch.getStatus() != BatchStatus.ASSIGNED_TO_DISTRIBUTOR) {
-            throw new RuntimeException("Batch is not assigned to distributor");
-        }
-
 
         if (batch.getStatus() == BatchStatus.RECEIVED_BY_DISTRIBUTOR) {
-            throw new RuntimeException("Batch already received");
+            throw new IllegalStateException(
+                    "Batch already received"
+            );
         }
 
-        batch.setStatus(BatchStatus.RECEIVED_BY_DISTRIBUTOR);
-        Batch savedBatch = batchRepository.save(batch);
+        if (batch.getStatus()
+                != BatchStatus.ASSIGNED_TO_DISTRIBUTOR) {
+            throw new IllegalStateException(
+                    "Batch is not assigned to distributor"
+            );
+        }
+
+        batch.setStatus(
+                BatchStatus.RECEIVED_BY_DISTRIBUTOR
+        );
+
+        Batch savedBatch =
+                batchRepository.save(batch);
 
         return toBatchListResponse(savedBatch);
     }
 
     @Override
+    @Transactional
     public RecordItemResponse addTransportRecord(
             Long batchId,
             TransportSensorRecordRequest request,
             Long distributorId
     ) {
-        Batch batch = getBatchForDistributor(batchId, distributorId);
+        Batch batch = getBatchForDistributor(
+                batchId,
+                distributorId
+        );
 
         if (batch.getAnchorStatus() == AnchorStatus.ANCHORED) {
-            throw new RuntimeException("Cannot add record to anchored batch");
+            throw new IllegalStateException(
+                    "Cannot add record to anchored batch"
+            );
         }
 
-        if (batch.getStatus() != BatchStatus.RECEIVED_BY_DISTRIBUTOR
-                && batch.getStatus() != BatchStatus.IN_DISTRIBUTION) {
-            throw new RuntimeException("Distributor must receive batch before adding transport record");
+        if (batch.getStatus()
+                != BatchStatus.RECEIVED_BY_DISTRIBUTOR
+                && batch.getStatus()
+                != BatchStatus.IN_DISTRIBUTION) {
+
+            throw new IllegalStateException(
+                    "Distributor must receive batch before adding transport record"
+            );
         }
 
+        /*
+         * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+         * Khóa hàng Vehicle trong database khi xử lý sequence.
+         *
+         * Nếu hai request của cùng thiết bị đến đồng thời,
+         * chỉ một request được quyền kiểm tra và cập nhật sequence
+         * tại một thời điểm.
+         */
         Vehicle vehicle = vehicleRepository
-                .findByIdAndDistributorIdAndActiveTrue(request.getVehicleId(), distributorId)
-                .orElseThrow(() -> new RuntimeException(
-                        "Vehicle not found or does not belong to this distributor"
-                ));
+                .findActiveVehicleForUpdate(
+                        request.getVehicleId(),
+                        distributorId
+                )
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Vehicle not found or does not belong to this distributor"
+                        )
+                );
 
-        String deviceSignature = generateDeviceSignature(vehicle, request);
+        if (vehicle.getDevicePublicKey() == null
+                || vehicle.getDevicePublicKey().isBlank()) {
+
+            throw new IllegalStateException(
+                    "Vehicle device public key is not registered"
+            );
+        }
+
+        /*
+         * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+         * Thiết bị phải gửi sequence tăng tuần tự.
+         *
+         * Chữ ký hợp lệ nhưng có sequence cũ vẫn bị từ chối,
+         * nhờ đó ngăn việc phát lại một bản tin IoT đã ký trước đó.
+         */
+        long lastSequence =
+                vehicle.getLastSequence() == null
+                        ? 0L
+                        : vehicle.getLastSequence();
+
+        long expectedSequence = lastSequence + 1L;
+
+        if (!request.getSequence().equals(expectedSequence)) {
+            throw new IllegalArgumentException(
+                    "Invalid device sequence. Expected "
+                            + expectedSequence
+                            + " but received "
+                            + request.getSequence()
+            );
+        }
 
         try {
-            Map<String, Object> transportPayload = new LinkedHashMap<>();
-            transportPayload.put("vehicleId", vehicle.getId());
-            transportPayload.put("vehiclePlate", vehicle.getVehiclePlate());
-            transportPayload.put("deviceId", vehicle.getDeviceId());
-            transportPayload.put("sensorFirmware", vehicle.getSensorFirmware());
-            transportPayload.put("gps", request.getGps());
-            transportPayload.put("temperature", request.getTemperature());
-            transportPayload.put("humidity", request.getHumidity());
-            transportPayload.put("timestamp", request.getTimestamp());
-            transportPayload.put("deviceSignature", deviceSignature);
+            /*
+             * Payload này chưa chứa deviceSignature.
+             * Thiết bị phải ký chính xác chuỗi JSON được tạo ra
+             * theo đúng thứ tự field bên dưới.
+             */
+            Map<String, Object> transportPayload =
+                    buildUnsignedTransportPayload(
+                            batch,
+                            vehicle,
+                            request
+                    );
 
-            RecordRequest recordRequest = new RecordRequest();
-            recordRequest.setRecordType(RecordType.TRANSPORT);
-            recordRequest.setRawJson(objectMapper.writeValueAsString(transportPayload));
+            String signaturePayload =
+                    objectMapper.writeValueAsString(
+                            transportPayload
+                    );
 
-            batch.setStatus(BatchStatus.IN_DISTRIBUTION);
+            /*
+             * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+             * Backend không tự tạo chữ ký thay thiết bị.
+             *
+             * Thiết bị ký bằng private key Ed25519.
+             * Backend chỉ xác minh bằng public key đã đăng ký
+             * trong Vehicle.
+             */
+            boolean signatureValid =
+                    deviceSignatureService.verifySignature(
+                            signaturePayload,
+                            request.getDeviceSignature(),
+                            vehicle.getDevicePublicKey()
+                    );
+
+            if (!signatureValid) {
+                throw new IllegalArgumentException(
+                        "Invalid device signature"
+                );
+            }
+
+            /*
+             * Chỉ cập nhật sequence sau khi:
+             * 1. Sequence đúng thứ tự.
+             * 2. Chữ ký thiết bị hợp lệ.
+             *
+             * Nếu tạo record hoặc upload IPFS thất bại,
+             * @Transactional sẽ rollback sequence này.
+             */
+            vehicle.setLastSequence(
+                    request.getSequence()
+            );
+
+            vehicleRepository.save(vehicle);
+
+            // Lưu chữ ký cùng dữ liệu cảm biến.
+            transportPayload.put(
+                    "deviceSignature",
+                    request.getDeviceSignature()
+            );
+
+            RecordRequest recordRequest =
+                    new RecordRequest();
+
+            recordRequest.setRecordType(
+                    RecordType.TRANSPORT
+            );
+
+            recordRequest.setRawJson(
+                    objectMapper.writeValueAsString(
+                            transportPayload
+                    )
+            );
+
+            /*
+             * GPS và dữ liệu cảm biến được xem là dữ liệu riêng tư.
+             * RecordService sẽ mã hóa bằng AES-256-GCM
+             * trước khi upload lên IPFS.
+             */
+            recordRequest.setPrivateData(true);
+
+            batch.setStatus(
+                    BatchStatus.IN_DISTRIBUTION
+            );
+
             batchRepository.save(batch);
 
-            Record savedRecord = recordService.createRecordsForBatch(
-                    batch,
-                    List.of(recordRequest),
-                    Role.DISTRIBUTOR
-            ).get(0);
+            Record savedRecord =
+                    recordService.createRecordsForBatch(
+                            batch,
+                            List.of(recordRequest),
+                            Role.DISTRIBUTOR
+                    ).get(0);
 
             return RecordItemResponse.builder()
                     .recordId(savedRecord.getId())
@@ -131,82 +269,149 @@ public class DistributorServiceImpl implements DistributorService {
                     .createdAt(savedRecord.getCreatedAt())
                     .build();
 
-        } catch (Exception e) {
-            throw new RuntimeException("Cannot create transport sensor record");
+        } catch (RuntimeException exception) {
+            throw exception;
+
+        } catch (Exception exception) {
+            throw new RuntimeException(
+                    "Cannot create transport sensor record",
+                    exception
+            );
         }
     }
 
-    private String generateDeviceSignature(
+    /*
+     * Dựng payload theo thứ tự cố định để thiết bị và backend
+     * luôn ký và xác minh cùng một chuỗi byte.
+     *
+     * batchId ngăn chữ ký được sử dụng cho batch khác.
+     * sequence ngăn chữ ký cũ được phát lại trong cùng batch.
+     */
+    private Map<String, Object> buildUnsignedTransportPayload(
+            Batch batch,
             Vehicle vehicle,
             TransportSensorRecordRequest request
     ) {
+        Map<String, Object> payload =
+                new LinkedHashMap<>();
 
-        String payload =
-                vehicle.getId() + "|" +
-                        vehicle.getVehiclePlate() + "|" +
-                        vehicle.getDeviceId() + "|" +
-                        vehicle.getSensorFirmware() + "|" +
-                        request.getGps() + "|" +
-                        request.getTemperature() + "|" +
-                        request.getHumidity() + "|" +
-                        request.getTimestamp();
+        /*
+         * Không thay đổi thứ tự các field này nếu simulator
+         * chưa được sửa tương ứng.
+         */
+        payload.put("batchId", batch.getId());
+        payload.put("vehicleId", vehicle.getId());
+        payload.put("sequence", request.getSequence());
+        payload.put(
+                "vehiclePlate",
+                vehicle.getVehiclePlate()
+        );
+        payload.put(
+                "deviceId",
+                vehicle.getDeviceId()
+        );
+        payload.put(
+                "sensorFirmware",
+                vehicle.getSensorFirmware()
+        );
+        payload.put("gps", request.getGps());
+        payload.put(
+                "temperature",
+                request.getTemperature()
+        );
+        payload.put(
+                "humidity",
+                request.getHumidity()
+        );
+        payload.put(
+                "timestamp",
+                request.getTimestamp()
+        );
 
-        return Hash.sha3(payload);
+        return payload;
     }
 
     @Override
-    public AdminBatchListResponse DeliveryToDetailer(Long batchId, Long distributorId) {
-        Batch batch = getBatchForDistributor(batchId, distributorId);
+    public AdminBatchListResponse DeliveryToDetailer(
+            Long batchId,
+            Long distributorId
+    ) {
+        Batch batch = getBatchForDistributor(
+                batchId,
+                distributorId
+        );
 
         if (batch.getAnchorStatus() == AnchorStatus.ANCHORED) {
-            throw new RuntimeException("Cannot confirm delivery for anchored batch");
+            throw new IllegalStateException(
+                    "Cannot confirm delivery for anchored batch"
+            );
         }
 
-        if (batch.getStatus() != BatchStatus.IN_DISTRIBUTION) {
-            throw new RuntimeException("Batch is not in distribution");
+        if (batch.getStatus()
+                != BatchStatus.IN_DISTRIBUTION) {
+
+            throw new IllegalStateException(
+                    "Batch is not in distribution"
+            );
         }
 
-        batch.setStatus(BatchStatus.DELIVERED_TO_RETAILER);
-        Batch savedBatch = batchRepository.save(batch);
+        batch.setStatus(
+                BatchStatus.DELIVERED_TO_RETAILER
+        );
+
+        Batch savedBatch =
+                batchRepository.save(batch);
 
         return toBatchListResponse(savedBatch);
     }
 
     @Override
-    public BatchDetailResponse getBatchDetail(Long batchId, Long distributorId) {
-        Batch batch = getBatchForDistributor(batchId, distributorId);
+    public BatchDetailResponse getBatchDetail(
+            Long batchId,
+            Long distributorId
+    ) {
+        Batch batch = getBatchForDistributor(
+                batchId,
+                distributorId
+        );
+
         return toBatchDetailResponse(batch);
     }
 
     @Override
-    public VerifyAllResponse verifyAllRecords(Long batchId, Long distributorId) {
-        Batch batch = getBatchForDistributor(batchId, distributorId);
-        return verifyService.verifyAllRecords(batch.getId());
+    public VerifyAllResponse verifyAllRecords(
+            Long batchId,
+            Long distributorId
+    ) {
+        Batch batch = getBatchForDistributor(
+                batchId,
+                distributorId
+        );
+
+        return verifyService.verifyAllRecords(
+                batch.getId()
+        );
     }
 
-//    private Batch getBatchForDistributor(Long batchId, Long distributorId) {
-//        return batchRepository.findByIdAndDistributorId(batchId, distributorId)
-//                .orElseThrow(() -> new RuntimeException("Batch not found or not assigned to this distributor"));
-//    }
-
-    private Batch getBatchForDistributor(Long batchId, Long distributorId) {
-        System.out.println("===== GET BATCH FOR DISTRIBUTOR DEBUG =====");
-        System.out.println("input batchId = " + batchId);
-        System.out.println("input distributorId = " + distributorId);
-
+    private Batch getBatchForDistributor(
+            Long batchId,
+            Long distributorId
+    ) {
         Batch batch = batchRepository.findById(batchId)
-                .orElseThrow(() -> new RuntimeException("Batch not found with id: " + batchId));
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Batch not found with id: "
+                                        + batchId
+                        )
+                );
 
-        System.out.println("DB batch id = " + batch.getId());
-        System.out.println("DB batch name = " + batch.getName());
-        System.out.println("DB distributorId = " + batch.getDistributorId());
-        System.out.println("DB retailerId = " + batch.getRetailerId());
-        System.out.println("DB status = " + batch.getStatus());
-        System.out.println("DB anchorStatus = " + batch.getAnchorStatus());
-
-        if (!Objects.equals(batch.getDistributorId(), distributorId)) {
+        if (!Objects.equals(
+                batch.getDistributorId(),
+                distributorId
+        )) {
             throw new RuntimeException(
-                    "Batch not assigned to this distributor. DB distributorId="
+                    "Batch not assigned to this distributor. "
+                            + "DB distributorId="
                             + batch.getDistributorId()
                             + ", current distributorId="
                             + distributorId
@@ -216,9 +421,9 @@ public class DistributorServiceImpl implements DistributorService {
         return batch;
     }
 
-
-
-    private AdminBatchListResponse toBatchListResponse(Batch batch) {
+    private AdminBatchListResponse toBatchListResponse(
+            Batch batch
+    ) {
         return AdminBatchListResponse.builder()
                 .id(batch.getId())
                 .name(batch.getName())
@@ -226,12 +431,20 @@ public class DistributorServiceImpl implements DistributorService {
                 .chainTxHash(batch.getChainTxHash())
                 .createdAt(batch.getCreatedAt())
                 .status(String.valueOf(batch.getStatus()))
-                .anchorStatus(String.valueOf(batch.getAnchorStatus()))
-                .recordCount(batch.getRecords() == null ? 0 : batch.getRecords().size())
+                .anchorStatus(
+                        String.valueOf(batch.getAnchorStatus())
+                )
+                .recordCount(
+                        batch.getRecords() == null
+                                ? 0
+                                : batch.getRecords().size()
+                )
                 .build();
     }
 
-    private BatchDetailResponse toBatchDetailResponse(Batch batch) {
+    private BatchDetailResponse toBatchDetailResponse(
+            Batch batch
+    ) {
         return BatchDetailResponse.builder()
                 .id(batch.getId())
                 .name(batch.getName())
@@ -241,19 +454,27 @@ public class DistributorServiceImpl implements DistributorService {
                 .status(batch.getStatus())
                 .anchorStatus(batch.getAnchorStatus())
                 .createdAt(batch.getCreatedAt())
-                .recordCount(batch.getRecords() == null ? 0 : batch.getRecords().size())
+                .recordCount(
+                        batch.getRecords() == null
+                                ? 0
+                                : batch.getRecords().size()
+                )
                 .records(
-                        batch.getRecords()
+                        batch.getRecords() == null
+                                ? List.of()
+                                : batch.getRecords()
                                 .stream()
-                                .map(record -> RecordItemResponse.builder()
-                                        .recordId(record.getId())
-                                        .recordKey(record.getRecordKey())
-                                        .recordType(record.getRecordType())
-                                        .rawJson(record.getRawJson())
-                                        .leafHash(record.getLeafHash())
-                                        .leafIndex(record.getLeafIndex())
-                                        .createdAt(record.getCreatedAt())
-                                        .build())
+                                .map(record ->
+                                        RecordItemResponse.builder()
+                                                .recordId(record.getId())
+                                                .recordKey(record.getRecordKey())
+                                                .recordType(record.getRecordType())
+                                                .rawJson(record.getRawJson())
+                                                .leafHash(record.getLeafHash())
+                                                .leafIndex(record.getLeafIndex())
+                                                .createdAt(record.getCreatedAt())
+                                                .build()
+                                )
                                 .toList()
                 )
                 .build();

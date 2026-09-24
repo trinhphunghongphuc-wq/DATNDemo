@@ -9,11 +9,14 @@ import com.enums.RecordType;
 import com.enums.Role;
 import com.exception.ResourceNotFoundException;
 import com.repository.RecordRepository;
+import com.service.DataEncryptionService;
 import com.service.IpfsService;
 import com.service.MerkleService;
 import com.service.RecordService;
+import com.service.StageMerkleService;
 import org.springframework.stereotype.Service;
-
+import org.springframework.transaction.annotation.Transactional;
+import com.repository.StageAnchorTransactionRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -23,26 +26,40 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import com.service.StageMerkleService;
-import org.springframework.transaction.annotation.Transactional;
-
 @Service
 public class RecordServiceImpl implements RecordService {
+
+    private static final int SALTED_HASH_VERSION = 2;
+    private static final int AES_GCM_VERSION = 1;
+
+    /*
+     * Nội dung thay thế được lưu trong PostgreSQL đối với record riêng tư.
+     * Plaintext thật chỉ được hash trong bộ nhớ và mã hóa trước khi upload IPFS.
+     */
+    private static final String PRIVATE_DATA_PLACEHOLDER =
+            "{\"privateData\":true,\"encrypted\":true}";
 
     private final RecordRepository recordRepository;
     private final MerkleService merkleService;
     private final IpfsService ipfsService;
     private final StageMerkleService stageMerkleService;
+    private final DataEncryptionService dataEncryptionService;
+    private final StageAnchorTransactionRepository
+            stageAnchorTransactionRepository;
 
     public RecordServiceImpl(
             RecordRepository recordRepository,
             MerkleService merkleService,
-            IpfsService ipfsService, StageMerkleService stageMerkleService
+            IpfsService ipfsService,
+            StageMerkleService stageMerkleService,
+            DataEncryptionService dataEncryptionService, StageAnchorTransactionRepository stageAnchorTransactionRepository
     ) {
         this.recordRepository = recordRepository;
         this.merkleService = merkleService;
         this.ipfsService = ipfsService;
         this.stageMerkleService = stageMerkleService;
+        this.dataEncryptionService = dataEncryptionService;
+        this.stageAnchorTransactionRepository = stageAnchorTransactionRepository;
     }
 
     private void validateStageCanAddRecord(
@@ -81,12 +98,15 @@ public class RecordServiceImpl implements RecordService {
             List<RecordRequest> requests,
             Role role
     ) {
-        validateRecordWritable(batch);
+        validateBatchRequired(batch);
+
+        if (requests == null || requests.isEmpty()) {
+            return List.of();
+        }
 
         List<Record> records = new ArrayList<>();
 
-
-        // Vị trí của record trong toàn bộ batch.
+        // Vị trí record trong toàn bộ batch.
         int startIndex = recordRepository
                 .findByBatchId(batch.getId())
                 .size();
@@ -106,16 +126,76 @@ public class RecordServiceImpl implements RecordService {
             RecordStage recordStage =
                     resolveRecordStage(request.getRecordType());
 
+            // Chặn sai role/state trước khi tạo dữ liệu trên IPFS.
             validateStageCanAddRecord(batch, recordStage);
+
+            /*
+             * Kiểm tra trước khi hash, mã hóa và upload IPFS,
+             * tránh tạo dữ liệu thừa nếu stage đã bị khóa.
+             */
+            validateStageNotAnchored(
+                    batch,
+                    recordStage
+            );
 
             String recordKey =
                     generateRecordKey(request.getRecordType());
 
-            String leafHash =
-                    merkleService.hashRecord(request.getRawJson());
+            String originalRawJson = request.getRawJson();
+
+            /*
+             * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+             * Merkle commitment luôn được tính trên plaintext gốc
+             * và dùng salt riêng cho từng record.
+             *
+             * Leaf V2 = Keccak-256(saltBytes || canonicalJsonBytes)
+             */
+            String leafSalt = merkleService.generateSalt();
+
+            String leafHash = merkleService.hashRecord(
+                    originalRawJson,
+                    leafSalt
+            );
+
+            boolean privateData = request.isPrivateData();
+
+            String ipfsPayload;
+            String databaseRawJson;
+            Integer encryptionVersion;
+
+            if (privateData) {
+                /*
+                 * AAD ràng buộc ciphertext với đúng batch và record.
+                 * Nếu ciphertext bị chuyển sang record khác,
+                 * AES-GCM sẽ từ chối giải mã.
+                 */
+                String encryptionContext =
+                        buildEncryptionContext(batch, recordKey);
+
+                /*
+                 * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+                 * Dữ liệu riêng tư được mã hóa AES-256-GCM
+                 * trước khi upload lên IPFS.
+                 */
+                ipfsPayload = dataEncryptionService.encrypt(
+                        originalRawJson,
+                        encryptionContext
+                );
+
+                /*
+                 * Không lưu plaintext riêng tư trong PostgreSQL.
+                 * API public và trang QR chỉ nhìn thấy placeholder này.
+                 */
+                databaseRawJson = PRIVATE_DATA_PLACEHOLDER;
+                encryptionVersion = AES_GCM_VERSION;
+            } else {
+                ipfsPayload = originalRawJson;
+                databaseRawJson = originalRawJson;
+                encryptionVersion = null;
+            }
 
             String ipfsCid =
-                    ipfsService.uploadJson(request.getRawJson());
+                    ipfsService.uploadJson(ipfsPayload);
 
             int stageLeafIndex = nextStageIndexes.computeIfAbsent(
                     recordStage,
@@ -134,12 +214,22 @@ public class RecordServiceImpl implements RecordService {
             Record record = Record.builder()
                     .recordKey(recordKey)
                     .recordType(request.getRecordType())
-                    .rawJson(request.getRawJson())
+
+                    // Plaintext với public record, placeholder với private record.
+                    .rawJson(databaseRawJson)
+
                     .ipfsCid(ipfsCid)
+                    .encrypted(privateData)
+                    .encryptionVersion(encryptionVersion)
+
+                    .leafSalt(leafSalt)
+                    .hashVersion(SALTED_HASH_VERSION)
+                    .leafHash(leafHash)
+
                     .recordStage(recordStage)
                     .stageLeafIndex(stageLeafIndex)
-                    .leafHash(leafHash)
                     .leafIndex(startIndex + i)
+
                     .batch(batch)
                     .createdAt(LocalDateTime.now())
                     .build();
@@ -160,6 +250,18 @@ public class RecordServiceImpl implements RecordService {
                 );
 
         return savedRecords;
+    }
+
+    /*
+     * Context không phải bí mật nhưng được AES-GCM xác thực bằng AAD.
+     * Phải dùng cùng công thức này khi giải mã.
+     */
+    private String buildEncryptionContext(
+            Batch batch,
+            String recordKey
+    ) {
+        return "batch:" + batch.getId()
+                + "|record:" + recordKey;
     }
 
     private RecordStage resolveRecordStage(RecordType recordType) {
@@ -224,17 +326,48 @@ public class RecordServiceImpl implements RecordService {
         }
     }
 
-    private void validateRecordWritable(Batch batch) {
+    private void validateBatchRequired(
+            Batch batch
+    ) {
         if (batch == null) {
             throw new IllegalArgumentException(
                     "Batch is required"
             );
         }
 
-        if (batch.getChainTxHash() != null
-                && !batch.getChainTxHash().isBlank()) {
+        if (batch.getId() == null) {
+            throw new IllegalArgumentException(
+                    "Batch must be saved before adding records"
+            );
+        }
+    }
+
+    /*
+     * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+     * Chỉ khóa stage đã được anchor thay vì khóa toàn bộ batch.
+     *
+     * Ví dụ:
+     * - Producer đã anchor: không thể thêm record Producer.
+     * - Distributor vẫn có thể thêm record vận chuyển.
+     * - Sau khi Distributor anchor: chỉ Retailer được tiếp tục.
+     */
+    private void validateStageNotAnchored(
+            Batch batch,
+            RecordStage recordStage
+    ) {
+        boolean anchored =
+                stageAnchorTransactionRepository
+                        .existsByBatch_IdAndRecordStage(
+                                batch.getId(),
+                                recordStage
+                        );
+
+        if (anchored) {
             throw new IllegalStateException(
-                    "Cannot add records to anchored batch"
+                    "Cannot add "
+                            + recordStage
+                            + " record because this stage "
+                            + "has already been anchored"
             );
         }
     }

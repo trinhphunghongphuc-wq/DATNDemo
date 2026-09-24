@@ -7,7 +7,10 @@ import com.dto.record.RecentRecordResponse;
 import com.dto.user.admin.AdminUserResponse;
 import com.dto.user.admin.UpdateUserRoleRequest;
 import com.dto.user.admin.UpdateUserStatusRequest;
-
+import com.enums.RecordStage;
+import org.springframework.transaction.annotation.Transactional;
+import com.dto.blockchain.StageAnchorResponse;
+import java.util.List;
 import java.util.List;
 
 public interface AdminService {
@@ -32,7 +35,16 @@ public interface AdminService {
 
     List<AdminRecordDetailResponse> filterRecords(Long batchId, String keyword);
 
-    AdminBatchListResponse anchorBatchRoot(Long batchId) throws Exception;
+
+    @Transactional
+    AdminBatchListResponse anchorBatchStageRoot(
+            Long batchId,
+            RecordStage stage
+    );
 
     BatchDetailResponse getBatchDetail(Long batchId);
+
+    List<StageAnchorResponse> getStageAnchors(
+            Long batchId
+    );
 }

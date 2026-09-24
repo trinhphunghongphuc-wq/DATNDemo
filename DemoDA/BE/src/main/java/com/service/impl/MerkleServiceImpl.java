@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.service.MerkleService;
 import org.bouncycastle.jcajce.provider.digest.Keccak;
 import org.springframework.stereotype.Service;
-
+import java.security.SecureRandom;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,6 +20,10 @@ public class MerkleServiceImpl implements MerkleService {
     private static final int HASH_HEX_LENGTH = 64;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    //Update theo Yao va cong su
+    private static final int SALT_BYTE_LENGTH = 32;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     @Override
     public String hashRecord(String rawJson) {
@@ -36,6 +40,82 @@ public class MerkleServiceImpl implements MerkleService {
             JsonNode sortedJson = sortObjectKeysRecursively(jsonNode);
             String canonicalJson = objectMapper.writeValueAsString(sortedJson);
             return keccak256(canonicalJson.getBytes(StandardCharsets.UTF_8));
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid rawJson format", e);
+        }
+    }
+
+    @Override
+    public String generateSalt() {
+        byte[] saltBytes = new byte[SALT_BYTE_LENGTH];
+        SECURE_RANDOM.nextBytes(saltBytes);
+
+        StringBuilder saltHex = new StringBuilder(SALT_BYTE_LENGTH * 2);
+
+        for (byte value : saltBytes) {
+            saltHex.append(String.format("%02x", value & 0xff));
+        }
+
+        return saltHex.toString();
+    }
+
+    @Override
+    public String hashRecord(String rawJson, String leafSalt) {
+        if (rawJson == null || rawJson.isBlank()) {
+            throw new IllegalArgumentException("rawJson cannot be blank");
+        }
+
+        if (leafSalt == null || leafSalt.isBlank()) {
+            throw new IllegalArgumentException("leafSalt cannot be blank");
+        }
+
+        try {
+            JsonNode jsonNode = objectMapper.readTree(rawJson);
+
+            if (jsonNode == null) {
+                throw new IllegalArgumentException("rawJson cannot be null JSON");
+            }
+
+            JsonNode sortedJson = sortObjectKeysRecursively(jsonNode);
+            String canonicalJson = objectMapper.writeValueAsString(sortedJson);
+
+            // Salt phải chứa đúng 32 byte, tương ứng 64 ký tự hexadecimal.
+            String normalizedSalt = normalizeHash(leafSalt);
+            byte[] saltBytes = hexToBytes(normalizedSalt);
+            byte[] jsonBytes = canonicalJson.getBytes(StandardCharsets.UTF_8);
+
+            byte[] saltedPayload =
+                    new byte[saltBytes.length + jsonBytes.length];
+
+            System.arraycopy(
+                    saltBytes,
+                    0,
+                    saltedPayload,
+                    0,
+                    saltBytes.length
+            );
+
+            System.arraycopy(
+                    jsonBytes,
+                    0,
+                    saltedPayload,
+                    saltBytes.length,
+                    jsonBytes.length
+            );
+
+            /*
+             * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
+             * Hash trực tiếp JSON được thay bằng:
+             *
+             * Leaf V2 = Keccak-256(saltBytes || canonicalJsonBytes)
+             *
+             * Vì mỗi record có salt ngẫu nhiên riêng nên hai JSON giống nhau
+             * cũng không tạo ra cùng một leafHash.
+             */
+            return keccak256(saltedPayload);
+
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {

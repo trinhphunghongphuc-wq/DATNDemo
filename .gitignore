@@ -28,3 +28,19 @@ Thumbs.db
 # Không đẩy file cấu hình chứa mật khẩu
 application-local.properties
 application-secret.properties
+
+
+# Hardhat
+DemoDA/SmartContract/artifacts/
+DemoDA/SmartContract/cache/
+DemoDA/SmartContract/node_modules/
+
+# React
+DemoDA/FE/node_modules/
+
+# Java
+DemoDA/BE/target/
+
+# IDE
+**/.idea/
+**/*.iml
