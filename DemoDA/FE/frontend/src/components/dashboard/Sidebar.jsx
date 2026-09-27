@@ -1,92 +1,133 @@
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
-  Truck,
-  ArrowLeftRight,
   Boxes,
+  Database,
+  Users,
   BarChart3,
-  ShieldCheck,
+  Truck,
+  Store,
+  Package,
+  LogOut,
 } from "lucide-react";
 
-const menus = [
-  {
-    title: "Dashboard",
-    icon: LayoutDashboard,
-    active: true,
-  },
-  {
-    title: "Shipments",
-    icon: Truck,
-  },
-  {
-    title: "Transactions",
-    icon: ArrowLeftRight,
-  },
-  {
-    title: "Inventory",
-    icon: Boxes,
-  },
-  {
-    title: "Analytics",
-    icon: BarChart3,
-  },
-  {
-    title: "Certificates",
-    icon: ShieldCheck,
-  },
-];
+const menusByRole = {
+  ADMIN: [
+    { label: "Tổng quan", to: "/admin", icon: LayoutDashboard, end: true },
+    { label: "Lô hàng & Anchor", to: "/admin/batches", icon: Boxes },
+    { label: "Bản ghi", to: "/admin/records", icon: Database },
+    { label: "Người dùng", to: "/admin/users", icon: Users },
+    { label: "Đánh giá chi phí", to: "/admin/evaluations", icon: BarChart3 },
+  ],
+
+  PRODUCER: [
+    { label: "Lô hàng của tôi", to: "/producer/batches", icon: Boxes },
+  ],
+
+  DISTRIBUTOR: [
+    { label: "Lô hàng được giao", to: "/distributor/batches", icon: Truck },
+    { label: "Danh sách xe", to: "/distributor/vehicles", icon: Package },
+  ],
+
+  RETAILER: [
+    { label: "Lô hàng nhận", to: "/retailer/batches", icon: Store },
+    { label: "Đơn vị bán lẻ", to: "/retailer/retail-units", icon: Package },
+  ],
+};
+
+const roleLabels = {
+  ADMIN: "Quản trị viên",
+  PRODUCER: "Nhà sản xuất",
+  DISTRIBUTOR: "Nhà phân phối",
+  RETAILER: "Nhà bán lẻ",
+};
 
 export default function Sidebar() {
+  const navigate = useNavigate();
+
+  // AuthResponse của BE trả username và role; LoginPage đã lưu hai giá trị này.
+  const username = localStorage.getItem("username") || "Tài khoản";
+  const role = (localStorage.getItem("role") || "").replace(/^ROLE_/, "");
+  const menus = menusByRole[role] ?? [];
+
+  const initial = username.trim().charAt(0).toUpperCase() || "U";
+
+  function handleLogout() {
+    localStorage.removeItem("token");
+    localStorage.removeItem("username");
+    localStorage.removeItem("role");
+    navigate("/login", { replace: true });
+  }
+
   return (
-    <aside className="w-[250px] min-h-screen bg-[#0b1020] border-r border-[#1f2937] flex flex-col justify-between">
-      <div>
-        {/* Logo */}
-        <div className="p-6 border-b border-[#1f2937]">
-          <h1 className="text-2xl font-bold text-blue-500">
-            ChainTrack
-          </h1>
-
-          <p className="text-gray-400 text-sm mt-1">
-            Enterprise Verified
-          </p>
-        </div>
-
-        {/* Menu */}
-        <div className="p-4 space-y-2">
-          {menus.map((menu, index) => {
-            const Icon = menu.icon;
-
-            return (
-              <button
-                key={index}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all
-                ${
-                  menu.active
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-400 hover:bg-[#141b2d] hover:text-white"
-                }`}
-              >
-                <Icon size={18} />
-                <span>{menu.title}</span>
-              </button>
-            );
-          })}
-        </div>
+    <aside className="flex min-h-screen w-[250px] shrink-0 flex-col border-r border-slate-800 bg-[#0b1020] text-slate-100">
+      <div className="border-b border-slate-800 px-6 py-6">
+        <p className="text-2xl font-bold tracking-tight text-blue-400">
+          ChainTrack
+        </p>
+        <p className="mt-1 text-xs text-slate-400">
+          Truy xuất nguồn gốc nông sản
+        </p>
       </div>
 
-      {/* User */}
-      <div className="p-4 border-t border-[#1f2937]">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-full bg-yellow-100 flex items-center justify-center text-black font-bold">
-            A
+      <div className="flex-1 px-3 py-5">
+        <p className="px-3 pb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          {roleLabels[role] ?? "Điều hướng"}
+        </p>
+
+        <nav aria-label="Menu theo vai trò" className="space-y-1">
+          {menus.map(({ label, to, icon: Icon, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) =>
+                [
+                  "flex items-center gap-3 rounded-xl px-3 py-3 text-sm",
+                  "font-medium transition-colors",
+                  isActive
+                    ? "bg-blue-600 text-white"
+                    : "text-slate-400 hover:bg-slate-800 hover:text-white",
+                ].join(" ")
+              }
+            >
+              <Icon size={18} aria-hidden="true" />
+              <span>{label}</span>
+            </NavLink>
+          ))}
+
+          {menus.length === 0 && (
+            <p className="px-3 text-sm text-slate-500">
+              Chưa có menu cho vai trò này.
+            </p>
+          )}
+        </nav>
+      </div>
+
+      <div className="border-t border-slate-800 p-4">
+        <div className="flex items-center gap-3 rounded-xl bg-slate-800/50 p-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 font-bold text-white">
+            {initial}
           </div>
 
-          <div>
-            <h3 className="font-semibold">Alex Rivera</h3>
-            <p className="text-sm text-gray-400">
-              Logistics Lead
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold" title={username}>
+              {username}
+            </p>
+            <p className="text-xs text-slate-400">
+              {roleLabels[role] ?? role}
             </p>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="mt-3 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-400"
+        >
+          <LogOut size={18} aria-hidden="true" />
+          Đăng xuất
+        </button>
       </div>
     </aside>
   );

@@ -93,4 +93,8 @@ public class Batch {
     @Column(name = "retailer_merkle_root", length = 64)
     private String retailerMerkleRoot;
 
+    // Tuyến đường dự kiến dạng GeoJSON LineString.
+    // Tách khỏi các điểm GPS thực nhận đã ký.
+    @Column(name = "transport_route_geojson", columnDefinition = "TEXT")
+    private String transportRouteGeoJson;
 }

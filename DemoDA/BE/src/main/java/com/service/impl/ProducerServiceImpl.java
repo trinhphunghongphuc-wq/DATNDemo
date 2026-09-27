@@ -1,6 +1,5 @@
 package com.service.impl;
 
-
 import com.dto.batch.UpdateExpiryDateRequest;
 import com.dto.record.RecordRequest;
 import com.dto.user.producer.ProducerBatchRequest;
@@ -9,16 +8,18 @@ import com.dto.verify.VerifyAllResponse;
 import com.dto.verify.VerifyRequest;
 import com.dto.verify.VerifyResponse;
 import com.entity.Batch;
+import com.entity.Record;
 import com.entity.User;
-import com.enums.AnchorStatus;
+import com.enums.RecordStage;
 import com.enums.Role;
 import com.repository.BatchRepository;
+import com.repository.StageAnchorTransactionRepository;
 import com.repository.UserRepository;
 import com.service.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.entity.Record;
+
 import java.util.List;
 
 @Service
@@ -30,14 +31,13 @@ public class ProducerServiceImpl implements ProducerService {
     private final BatchService batchService;
     private final RecordService recordService;
     private final VerifyService verifyService;
+    private final StageAnchorTransactionRepository stageAnchorTransactionRepository;
 
     @Override
     @Transactional
     public ProducerBatchResponse createBatch(ProducerBatchRequest request, String username) {
-
         User producer = userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("User not found: " + username));
-
 
         Batch batch = batchService.createBatchEntity(request, Role.PRODUCER);
         batch.setCreatedBy(producer);
@@ -45,8 +45,6 @@ public class ProducerServiceImpl implements ProducerService {
 
         return mapToProducerBatchResponse(savedBatch);
     }
-
-
 
     @Override
     @Transactional(readOnly = true)
@@ -68,9 +66,7 @@ public class ProducerServiceImpl implements ProducerService {
     @Transactional
     public ProducerBatchResponse addRecords(Long batchId, List<RecordRequest> requests, String username) {
         Batch batch = getProducerBatch(batchId, username);
-
         validateBatchCanBeModified(batch);
-
         recordService.createRecordsForBatch(batch, requests, Role.PRODUCER);
 
         Batch updatedBatch = batchRepository.findById(batchId)
@@ -78,8 +74,6 @@ public class ProducerServiceImpl implements ProducerService {
 
         return mapToProducerBatchResponse(updatedBatch);
     }
-
-
 
     @Override
     @Transactional
@@ -89,29 +83,19 @@ public class ProducerServiceImpl implements ProducerService {
             String username
     ) {
         Batch batch = getProducerBatch(batchId, username);
-
         validateBatchCanBeModified(batch);
-
         batch.setExpiryDate(request.getExpiryDate());
-
         Batch savedBatch = batchRepository.save(batch);
-
         return mapToProducerBatchResponse(savedBatch);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public VerifyAllResponse verifyAll(
-            Long batchId,
-            String username
-    ) {
-        Batch batch = batchRepository
-                .findByIdAndCreatedByUsername(batchId, username)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Batch not found or you do not have permission"
-                        )
-                );
+    public VerifyAllResponse verifyAll(Long batchId, String username) {
+        Batch batch = batchRepository.findByIdAndCreatedByUsername(batchId, username)
+                .orElseThrow(() -> new RuntimeException(
+                        "Batch not found or you do not have permission"
+                ));
 
         List<Record> records = batch.getRecords();
 
@@ -125,11 +109,8 @@ public class ProducerServiceImpl implements ProducerService {
                     .totalRecords(0)
                     .validRecords(0)
                     .invalidRecords(0)
-                    .anchorStatus(
-                            batch.getAnchorStatus() == null
-                                    ? null
-                                    : batch.getAnchorStatus().name()
-                    )
+                    .anchorStatus(batch.getAnchorStatus() == null
+                            ? null : batch.getAnchorStatus().name())
                     .results(List.of())
                     .build();
         }
@@ -149,7 +130,6 @@ public class ProducerServiceImpl implements ProducerService {
                     VerifyRequest request = new VerifyRequest();
                     request.setBatchId(batch.getId());
                     request.setRecordKey(record.getRecordKey());
-
                     return verifyService.verify(request);
                 })
                 .toList();
@@ -172,11 +152,8 @@ public class ProducerServiceImpl implements ProducerService {
                 .totalRecords(totalRecords)
                 .validRecords(validCount)
                 .invalidRecords(invalidCount)
-                .anchorStatus(
-                        batch.getAnchorStatus() == null
-                                ? null
-                                : batch.getAnchorStatus().name()
-                )
+                .anchorStatus(batch.getAnchorStatus() == null
+                        ? null : batch.getAnchorStatus().name())
                 .results(results)
                 .build();
     }
@@ -189,8 +166,9 @@ public class ProducerServiceImpl implements ProducerService {
     }
 
     private void validateBatchCanBeModified(Batch batch) {
-        if (batch.getAnchorStatus() == AnchorStatus.ANCHORED) {
-            throw new RuntimeException("Cannot modify anchored batch");
+        if (stageAnchorTransactionRepository.existsByBatch_IdAndRecordStage(
+                batch.getId(), RecordStage.PRODUCER)) {
+            throw new RuntimeException("Cannot modify batch after Producer stage is anchored");
         }
     }
 
@@ -199,14 +177,13 @@ public class ProducerServiceImpl implements ProducerService {
                 .id(batch.getId())
                 .name(batch.getName())
                 .batchCode(batch.getBatchCode())
-                .qrContent(
-                        "http://localhost:5173/trace/batch/" + batch.getBatchCode()
-                )
+                .qrContent("http://localhost:5173/trace/batch/" + batch.getBatchCode())
                 .merkleRoot(batch.getMerkleRoot())
                 .chainTxHash(batch.getChainTxHash())
                 .expiryDate(batch.getExpiryDate())
                 .status(batch.getStatus() == null ? null : batch.getStatus().name())
-                .anchorStatus(batch.getAnchorStatus() == null ? null : batch.getAnchorStatus().name())
+                .anchorStatus(batch.getAnchorStatus() == null
+                        ? null : batch.getAnchorStatus().name())
                 .createdAt(batch.getCreatedAt())
                 .recordCount(batch.getRecords() == null ? 0 : batch.getRecords().size())
                 .build();

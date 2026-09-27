@@ -45,4 +45,5 @@ DemoDA/BE/target/
 **/.idea/
 **/*.iml
 
-DemoDA/SmartContract/web3j-artifacts/
+DemoDA/SmartContract/web3j-artifacts/DemoDA/FE/frontend/public/assets/
+DemoDA/FE/frontend/public/maps/

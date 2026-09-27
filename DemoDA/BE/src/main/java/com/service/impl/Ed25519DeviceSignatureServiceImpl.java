@@ -14,66 +14,31 @@ import java.util.Base64;
 public class Ed25519DeviceSignatureServiceImpl
         implements DeviceSignatureService {
 
-    private static final String ALGORITHM = "Ed25519";
-
     @Override
     public boolean verifySignature(
             String payload,
             String signatureBase64,
             String publicKeyBase64
     ) {
-        if (payload == null || payload.isBlank()) {
-            return false;
-        }
-
-        if (signatureBase64 == null
-                || signatureBase64.isBlank()) {
-            return false;
-        }
-
-        if (publicKeyBase64 == null
-                || publicKeyBase64.isBlank()) {
+        if (payload == null || payload.isBlank()
+                || signatureBase64 == null || signatureBase64.isBlank()
+                || publicKeyBase64 == null || publicKeyBase64.isBlank()) {
             return false;
         }
 
         try {
-            byte[] publicKeyBytes =
-                    Base64.getDecoder().decode(publicKeyBase64);
+            byte[] publicKeyBytes = Base64.getDecoder().decode(publicKeyBase64);
+            byte[] signatureBytes = Base64.getDecoder().decode(signatureBase64);
 
-            byte[] signatureBytes =
-                    Base64.getDecoder().decode(signatureBase64);
+            PublicKey publicKey = KeyFactory.getInstance("Ed25519")
+                    .generatePublic(new X509EncodedKeySpec(publicKeyBytes));
 
-            KeyFactory keyFactory =
-                    KeyFactory.getInstance(ALGORITHM);
-
-            PublicKey publicKey = keyFactory.generatePublic(
-                    new X509EncodedKeySpec(publicKeyBytes)
-            );
-
-            Signature verifier =
-                    Signature.getInstance(ALGORITHM);
-
+            Signature verifier = Signature.getInstance("Ed25519");
             verifier.initVerify(publicKey);
+            verifier.update(payload.getBytes(StandardCharsets.UTF_8));
 
-            verifier.update(
-                    payload.getBytes(StandardCharsets.UTF_8)
-            );
-
-            /*
-             * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
-             * Backend chỉ giữ public key và chỉ xác minh.
-             * Private key không xuất hiện trong backend hoặc database.
-             *
-             * Nếu payload hoặc signature bị thay đổi,
-             * Ed25519 verification sẽ trả về false.
-             */
             return verifier.verify(signatureBytes);
-
-        } catch (Exception e) {
-            /*
-             * Public key sai định dạng, signature không hợp lệ
-             * hoặc dữ liệu Base64 bị hỏng đều bị từ chối.
-             */
+        } catch (Exception exception) {
             return false;
         }
     }

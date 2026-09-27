@@ -10,6 +10,7 @@ import com.entity.Record;
 import com.enums.RecordStage;
 import java.util.List;
 import java.util.Optional;
+import com.enums.RecordType;
 
 @Repository
 public interface RecordRepository extends JpaRepository<com.entity.Record, Long> {
@@ -33,6 +34,11 @@ public interface RecordRepository extends JpaRepository<com.entity.Record, Long>
     List<Record> findByBatchIdAndRecordStageOrderByStageLeafIndexAsc(
             Long batchId,
             RecordStage recordStage
+    );
+
+    List<Record> findByBatchIdAndRecordTypeOrderByStageLeafIndexAsc(
+            Long batchId,
+            RecordType recordType
     );
 
 }

@@ -9,6 +9,7 @@ import com.enums.RecordType;
 import com.enums.Role;
 import com.exception.ResourceNotFoundException;
 import com.repository.RecordRepository;
+import com.repository.StageAnchorTransactionRepository;
 import com.service.DataEncryptionService;
 import com.service.IpfsService;
 import com.service.MerkleService;
@@ -16,7 +17,7 @@ import com.service.RecordService;
 import com.service.StageMerkleService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.repository.StageAnchorTransactionRepository;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -44,15 +45,15 @@ public class RecordServiceImpl implements RecordService {
     private final IpfsService ipfsService;
     private final StageMerkleService stageMerkleService;
     private final DataEncryptionService dataEncryptionService;
-    private final StageAnchorTransactionRepository
-            stageAnchorTransactionRepository;
+    private final StageAnchorTransactionRepository stageAnchorTransactionRepository;
 
     public RecordServiceImpl(
             RecordRepository recordRepository,
             MerkleService merkleService,
             IpfsService ipfsService,
             StageMerkleService stageMerkleService,
-            DataEncryptionService dataEncryptionService, StageAnchorTransactionRepository stageAnchorTransactionRepository
+            DataEncryptionService dataEncryptionService,
+            StageAnchorTransactionRepository stageAnchorTransactionRepository
     ) {
         this.recordRepository = recordRepository;
         this.merkleService = merkleService;
@@ -98,10 +99,51 @@ public class RecordServiceImpl implements RecordService {
             List<RecordRequest> requests,
             Role role
     ) {
+        return createRecordsInternal(batch, requests, role, false);
+    }
+
+    @Override
+    @Transactional
+    public Record createVerifiedTransportRecord(
+            Batch batch,
+            RecordRequest request
+    ) {
+        if (request == null
+                || request.getRecordType() != RecordType.TRANSPORT
+                || !request.isPrivateData()) {
+            throw new IllegalArgumentException(
+                    "Expected an encrypted TRANSPORT record"
+            );
+        }
+
+        // DistributorServiceImpl xác minh chữ ký trước khi gọi phương thức này.
+        return createRecordsInternal(
+                batch,
+                List.of(request),
+                Role.DISTRIBUTOR,
+                true
+        ).get(0);
+    }
+
+    private List<Record> createRecordsInternal(
+            Batch batch,
+            List<RecordRequest> requests,
+            Role role,
+            boolean verifiedTransport
+    ) {
         validateBatchRequired(batch);
 
         if (requests == null || requests.isEmpty()) {
             return List.of();
+        }
+
+        // Chặn trước khi hash hoặc upload dữ liệu lên IPFS.
+        if (!verifiedTransport && requests.stream().anyMatch(request ->
+                request != null
+                        && request.getRecordType() == RecordType.TRANSPORT)) {
+            throw new IllegalArgumentException(
+                    "TRANSPORT records require verified device signature"
+            );
         }
 
         List<Record> records = new ArrayList<>();
@@ -144,8 +186,7 @@ public class RecordServiceImpl implements RecordService {
             String originalRawJson = request.getRawJson();
 
             /*
-             * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
-             * Merkle commitment luôn được tính trên plaintext gốc
+             * Merkle commitment được tính trên plaintext gốc
              * và dùng salt riêng cho từng record.
              *
              * Leaf V2 = Keccak-256(saltBytes || canonicalJsonBytes)
@@ -172,11 +213,6 @@ public class RecordServiceImpl implements RecordService {
                 String encryptionContext =
                         buildEncryptionContext(batch, recordKey);
 
-                /*
-                 * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
-                 * Dữ liệu riêng tư được mã hóa AES-256-GCM
-                 * trước khi upload lên IPFS.
-                 */
                 ipfsPayload = dataEncryptionService.encrypt(
                         originalRawJson,
                         encryptionContext
@@ -214,22 +250,16 @@ public class RecordServiceImpl implements RecordService {
             Record record = Record.builder()
                     .recordKey(recordKey)
                     .recordType(request.getRecordType())
-
-                    // Plaintext với public record, placeholder với private record.
                     .rawJson(databaseRawJson)
-
                     .ipfsCid(ipfsCid)
                     .encrypted(privateData)
                     .encryptionVersion(encryptionVersion)
-
                     .leafSalt(leafSalt)
                     .hashVersion(SALTED_HASH_VERSION)
                     .leafHash(leafHash)
-
                     .recordStage(recordStage)
                     .stageLeafIndex(stageLeafIndex)
                     .leafIndex(startIndex + i)
-
                     .batch(batch)
                     .createdAt(LocalDateTime.now())
                     .build();
@@ -326,9 +356,7 @@ public class RecordServiceImpl implements RecordService {
         }
     }
 
-    private void validateBatchRequired(
-            Batch batch
-    ) {
+    private void validateBatchRequired(Batch batch) {
         if (batch == null) {
             throw new IllegalArgumentException(
                     "Batch is required"
@@ -343,7 +371,6 @@ public class RecordServiceImpl implements RecordService {
     }
 
     /*
-     * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
      * Chỉ khóa stage đã được anchor thay vì khóa toàn bộ batch.
      *
      * Ví dụ:

@@ -9,7 +9,6 @@ import com.dto.verify.VerifyAllResponse;
 import com.entity.Batch;
 import com.entity.Record;
 import com.entity.Vehicle;
-import com.enums.AnchorStatus;
 import com.enums.BatchStatus;
 import com.enums.RecordType;
 import com.enums.Role;
@@ -60,12 +59,6 @@ public class DistributorServiceImpl implements DistributorService {
                 distributorId
         );
 
-        if (batch.getAnchorStatus() == AnchorStatus.ANCHORED) {
-            throw new IllegalStateException(
-                    "Cannot receive anchored batch"
-            );
-        }
-
         if (batch.getStatus() == BatchStatus.RECEIVED_BY_DISTRIBUTOR) {
             throw new IllegalStateException(
                     "Batch already received"
@@ -100,12 +93,6 @@ public class DistributorServiceImpl implements DistributorService {
                 batchId,
                 distributorId
         );
-
-        if (batch.getAnchorStatus() == AnchorStatus.ANCHORED) {
-            throw new IllegalStateException(
-                    "Cannot add record to anchored batch"
-            );
-        }
 
         if (batch.getStatus()
                 != BatchStatus.RECEIVED_BY_DISTRIBUTOR
@@ -253,11 +240,10 @@ public class DistributorServiceImpl implements DistributorService {
             batchRepository.save(batch);
 
             Record savedRecord =
-                    recordService.createRecordsForBatch(
+                    recordService.createVerifiedTransportRecord(
                             batch,
-                            List.of(recordRequest),
-                            Role.DISTRIBUTOR
-                    ).get(0);
+                            recordRequest
+                    );
 
             return RecordItemResponse.builder()
                     .recordId(savedRecord.getId())
@@ -340,12 +326,6 @@ public class DistributorServiceImpl implements DistributorService {
                 batchId,
                 distributorId
         );
-
-        if (batch.getAnchorStatus() == AnchorStatus.ANCHORED) {
-            throw new IllegalStateException(
-                    "Cannot confirm delivery for anchored batch"
-            );
-        }
 
         if (batch.getStatus()
                 != BatchStatus.IN_DISTRIBUTION) {
