@@ -52,7 +52,7 @@ function LoginPage() {
       setMessage(data?.message || "Login successful!");
 
       setTimeout(() => {
-        navigate("/dashboard");
+navigate(role?.replace("ROLE_", "") === "ADMIN" ? "/admin" : "/dashboard");
       }, 800);
     } catch (err) {
       console.error("Login error:", err);

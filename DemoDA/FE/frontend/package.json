@@ -10,12 +10,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@protomaps/basemaps": "^5.7.2",
     "@tailwindcss/vite": "^4.2.2",
     "axios": "^1.13.6",
+    "leaflet": "^1.9.4",
     "lucide-react": "^1.16.0",
+    "maplibre-gl": "^6.11.2",
+    "pmtiles": "^4.5.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-leaflet": "^5.0.0",
     "react-router-dom": "^6.30.3"
   },
   "devDependencies": {
