@@ -6,6 +6,7 @@ import com.dto.verify.VerifyRequest;
 import com.dto.verify.VerifyResponse;
 import com.entity.Batch;
 import com.entity.Record;
+import com.enums.RecordType;
 import com.enums.Role;
 import com.repository.RecordRepository;
 import com.service.BatchService;
@@ -27,7 +28,12 @@ public class BatchController {
     private final VerifyService verifyService;
     private final RecordRepository recordRepository;
 
-    public BatchController(BatchService batchService, RecordService recordService, VerifyService verifyService, RecordRepository recordRepository) {
+    public BatchController(
+            BatchService batchService,
+            RecordService recordService,
+            VerifyService verifyService,
+            RecordRepository recordRepository
+    ) {
         this.batchService = batchService;
         this.recordService = recordService;
         this.verifyService = verifyService;
@@ -39,24 +45,39 @@ public class BatchController {
             @Valid @RequestBody BatchRequest request,
             Authentication authentication
     ) {
-        String authority = authentication.getAuthorities().iterator().next().getAuthority();
-        Role role = Role.valueOf(authority.replace("ROLE_", ""));
+        rejectUnsignedTransport(request.getRecords());
 
-        System.out.println("AUTHORITIES = " + authentication.getAuthorities());
-        System.out.println("ROLE PARSED = " + role);
+        String authority = authentication.getAuthorities()
+                .iterator()
+                .next()
+                .getAuthority();
 
-        return ResponseEntity.ok(batchService.createBatch(request, role));
+        Role role = Role.valueOf(
+                authority.replace("ROLE_", "")
+        );
+
+        return ResponseEntity.ok(
+                batchService.createBatch(request, role)
+        );
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<BatchDetailResponse> getBatchById(@PathVariable Long id) {
-        return ResponseEntity.ok(batchService.getBatchDetail(id));
+    public ResponseEntity<BatchDetailResponse> getBatchById(
+            @PathVariable Long id
+    ) {
+        return ResponseEntity.ok(
+                batchService.getBatchDetail(id)
+        );
     }
 
     @GetMapping("/{batchId}/proof/{recordKey}")
-    public ResponseEntity<ProofResponse> getProof(@PathVariable Long batchId,
-                                                  @PathVariable String recordKey) {
-        return ResponseEntity.ok(batchService.getProof(batchId, recordKey));
+    public ResponseEntity<ProofResponse> getProof(
+            @PathVariable Long batchId,
+            @PathVariable String recordKey
+    ) {
+        return ResponseEntity.ok(
+                batchService.getProof(batchId, recordKey)
+        );
     }
 
     @GetMapping("/{batchId}/verify/{recordKey}")
@@ -64,18 +85,20 @@ public class BatchController {
             @PathVariable Long batchId,
             @PathVariable String recordKey
     ) {
-
         VerifyRequest request = new VerifyRequest();
         request.setBatchId(batchId);
 
-
         Record record = recordRepository
                 .findByBatchIdAndRecordKey(batchId, recordKey)
-                .orElseThrow(() -> new RuntimeException("Record not found"));
+                .orElseThrow(() ->
+                        new RuntimeException("Record not found")
+                );
 
         request.setRawJson(record.getRawJson());
 
-        return ResponseEntity.ok(verifyService.verify(request));
+        return ResponseEntity.ok(
+                verifyService.verify(request)
+        );
     }
 
     @PostMapping("/{batchId}/records")
@@ -84,17 +107,46 @@ public class BatchController {
             @RequestBody List<RecordRequest> requests,
             Authentication authentication
     ) {
+        rejectUnsignedTransport(requests);
+
         Batch batch = batchService.getBatchById(batchId);
 
-        String authority = authentication.getAuthorities().iterator().next().getAuthority();
-        Role role = Role.valueOf(authority.replace("ROLE_", ""));
+        String authority = authentication.getAuthorities()
+                .iterator()
+                .next()
+                .getAuthority();
 
-        List<Record> records = recordService.createRecordsForBatch(batch, requests, role);
+        Role role = Role.valueOf(
+                authority.replace("ROLE_", "")
+        );
+
+        List<Record> records = recordService
+                .createRecordsForBatch(batch, requests, role);
+
         return ResponseEntity.ok(records);
     }
 
     @GetMapping
     public ResponseEntity<List<BatchListResponse>> getAllBatches() {
-        return ResponseEntity.ok(batchService.getAllBatches());
+        return ResponseEntity.ok(
+                batchService.getAllBatches()
+        );
+    }
+
+    private void rejectUnsignedTransport(
+            List<RecordRequest> requests
+    ) {
+        if (requests != null && requests.stream()
+                .anyMatch(request ->
+                        request != null
+                                && request.getRecordType()
+                                == RecordType.TRANSPORT
+                )) {
+            throw new IllegalArgumentException(
+                    "TRANSPORT records require the signed "
+                            + "/api/distributor/batches/{id}"
+                            + "/transport-record endpoint"
+            );
+        }
     }
 }

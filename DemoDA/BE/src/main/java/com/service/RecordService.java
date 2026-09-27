@@ -19,4 +19,10 @@ public interface RecordService {
 
 //    Record updateRecord(String recordKey, RecordRequest request, Role role);
 //    void deleteRecord(String recordKey);
+
+    // Chỉ gọi sau khi DistributorServiceImpl đã xác minh chữ ký thiết bị.
+    Record createVerifiedTransportRecord(
+            Batch batch,
+            RecordRequest request
+    );
 }

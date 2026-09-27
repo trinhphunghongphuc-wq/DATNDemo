@@ -240,11 +240,10 @@ public class DistributorServiceImpl implements DistributorService {
             batchRepository.save(batch);
 
             Record savedRecord =
-                    recordService.createRecordsForBatch(
+                    recordService.createVerifiedTransportRecord(
                             batch,
-                            List.of(recordRequest),
-                            Role.DISTRIBUTOR
-                    ).get(0);
+                            recordRequest
+                    );
 
             return RecordItemResponse.builder()
                     .recordId(savedRecord.getId())
