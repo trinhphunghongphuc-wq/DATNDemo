@@ -8,7 +8,6 @@ import com.dto.user.producer.RejectDeliveryRequest;
 import com.dto.verify.VerifyAllResponse;
 import com.entity.Batch;
 import com.entity.Record;
-import com.enums.AnchorStatus;
 import com.enums.BatchStatus;
 import com.enums.RecordType;
 import com.enums.Role;
@@ -46,10 +45,6 @@ public class RetailerServiceImpl implements RetailerService {
     public AdminBatchListResponse receiveBatch(Long batchId, Long retailerId) {
         Batch batch = getBatchForRetailer(batchId, retailerId);
 
-        if (batch.getAnchorStatus() == AnchorStatus.ANCHORED) {
-            throw new RuntimeException("Cannot receive anchored batch");
-        }
-
         if (batch.getStatus() != BatchStatus.RECEIVED_BY_DISTRIBUTOR
                 && batch.getStatus() != BatchStatus.IN_DISTRIBUTION) {
             throw new RuntimeException("Batch is not ready for retailer");
@@ -64,10 +59,6 @@ public class RetailerServiceImpl implements RetailerService {
     @Override
     public RecordItemResponse addRetailRecord(Long batchId, RecordRequest request, Long retailerId) {
         Batch batch = getBatchForRetailer(batchId, retailerId);
-
-        if (batch.getAnchorStatus() == AnchorStatus.ANCHORED) {
-            throw new RuntimeException("Cannot add record to anchored batch");
-        }
 
         if (batch.getStatus() != BatchStatus.AT_RETAIL) {
             throw new RuntimeException("Retailer must receive batch before adding retail record");
@@ -170,10 +161,6 @@ public class RetailerServiceImpl implements RetailerService {
 
         Batch batch = getBatchForRetailer(batchId, retailerId);
 
-        if (batch.getAnchorStatus() == AnchorStatus.ANCHORED) {
-            throw new RuntimeException("Cannot confirm anchored batch");
-        }
-
         if (batch.getStatus() != BatchStatus.DELIVERED_TO_RETAILER) {
             throw new RuntimeException(
                     "Batch is not delivered to retailer yet"
@@ -196,10 +183,6 @@ public class RetailerServiceImpl implements RetailerService {
     ) {
 
         Batch batch = getBatchForRetailer(batchId, retailerId);
-
-        if (batch.getAnchorStatus() == AnchorStatus.ANCHORED) {
-            throw new RuntimeException("Cannot reject anchored batch");
-        }
 
         if (batch.getStatus() != BatchStatus.DELIVERED_TO_RETAILER) {
             throw new RuntimeException("Batch is not delivered to retailer yet");
