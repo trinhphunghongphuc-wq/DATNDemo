@@ -52,15 +52,25 @@ function LoginPage() {
       setMessage(data?.message || "Login successful!");
 
       setTimeout(() => {
-navigate(role?.replace("ROLE_", "") === "ADMIN" ? "/admin" : "/dashboard");
+        const normalizedRole = role?.replace("ROLE_", "");
+
+        navigate(
+          normalizedRole === "ADMIN"
+            ? "/admin"
+            : normalizedRole === "PRODUCER"
+              ? "/producer/batches"
+              : normalizedRole === "DISTRIBUTOR"
+                ? "/distributor/batches"
+                : "/dashboard"
+        );
       }, 800);
     } catch (err) {
       console.error("Login error:", err);
 
       setError(
         err?.response?.data?.message ||
-          err?.response?.data ||
-          "Login failed. Please check your credentials."
+        err?.response?.data ||
+        "Login failed. Please check your credentials."
       );
     } finally {
       setLoading(false);

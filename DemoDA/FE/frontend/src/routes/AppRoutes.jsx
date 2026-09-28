@@ -1,17 +1,35 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import {
+  Routes,
+  Route,
+  Navigate,
+  Outlet,
+} from "react-router-dom";
+
 import LoginPage from "../pages/auth/LoginPage";
 import RegisterPage from "../pages/auth/RegisterPage";
-import DashboardPage from "../pages/dashboard/DashboardPage";
 import TraceBatchPage from "../pages/trace/TraceBatchPage";
+
 import DashboardLayout from "../layouts/DashboardLayout";
 import BatchQrPage from "../pages/batches/BatchQrPage";
+
+import ProducerBatchesPage from "../pages/producer/ProducerBatchesPage";
+import ProducerPartnersPage from "../pages/producer/ProducerPartnersPage";
+
 import DistributorBatchesPage from "../pages/distributor/DistributorBatchesPage";
 import DistributorJourneyPage from "../pages/distributor/DistributorJourneyPage";
+
+import CompanyProfilePage from "../pages/company/CompanyProfilePage";
+
 import AdminOverviewPage from "../pages/admin/AdminOverviewPage";
 import AdminBatchesPage from "../pages/admin/AdminBatchesPage";
 import AdminRecordsPage from "../pages/admin/AdminRecordsPage";
 import AdminUsersPage from "../pages/admin/AdminUsersPage";
 import AdminEvaluationsPage from "../pages/admin/AdminEvaluationsPage";
+
+function getRole() {
+  return (localStorage.getItem("role") || "").replace(/^ROLE_/, "");
+}
+
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem("token");
 
@@ -22,17 +40,48 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+function RoleRoute({ allowedRoles }) {
+  if (!allowedRoles.includes(getRole())) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <Outlet />;
+}
+
+function DashboardHome() {
+  const homeByRole = {
+    ADMIN: "/admin",
+    PRODUCER: "/producer/batches",
+    DISTRIBUTOR: "/distributor/batches",
+    RETAILER: "/company-profile",
+  };
+
+  return (
+    <Navigate
+      to={homeByRole[getRole()] ?? "/login"}
+      replace
+    />
+  );
+}
+
 export default function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/login" replace />} />
+      <Route
+        path="/"
+        element={<Navigate to="/dashboard" replace />}
+      />
+
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
+      {/* Trang công khai mở từ QR */}
       <Route
         path="/trace/batch/:batchCode"
         element={<TraceBatchPage />}
       />
+
+      {/* Các trang cần đăng nhập */}
       <Route
         element={
           <ProtectedRoute>
@@ -40,65 +89,79 @@ export default function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route path="/dashboard" element={<DashboardPage />} />
-
         <Route
-          path="/producer/batches/:batchId/qr"
-          element={<BatchQrPage />}
+          path="/dashboard"
+          element={<DashboardHome />}
         />
 
-        <Route
-          path="/distributor/batches"
-          element={<DistributorBatchesPage />}
-        />
-        <Route
-          path="/distributor/batches/:batchId"
-          element={<DistributorJourneyPage />}
-        />
+        {/* Admin */}
+        <Route element={<RoleRoute allowedRoles={["ADMIN"]} />}>
+          <Route
+            path="/admin"
+            element={<AdminOverviewPage />}
+          />
+          <Route
+            path="/admin/batches"
+            element={<AdminBatchesPage />}
+          />
+          <Route
+            path="/admin/records"
+            element={<AdminRecordsPage />}
+          />
+          <Route
+            path="/admin/users"
+            element={<AdminUsersPage />}
+          />
+          <Route
+            path="/admin/evaluations"
+            element={<AdminEvaluationsPage />}
+          />
+        </Route>
 
+        {/* Producer */}
+        <Route element={<RoleRoute allowedRoles={["PRODUCER"]} />}>
+          <Route
+            path="/producer/batches"
+            element={<ProducerBatchesPage />}
+          />
+          <Route
+            path="/producer/batches/:batchId/qr"
+            element={<BatchQrPage />}
+          />
+          <Route
+            path="/producer/partners"
+            element={<ProducerPartnersPage />}
+          />
+        </Route>
+
+        {/* Distributor */}
+        <Route element={<RoleRoute allowedRoles={["DISTRIBUTOR"]} />}>
+          <Route
+            path="/distributor/batches"
+            element={<DistributorBatchesPage />}
+          />
+          <Route
+            path="/distributor/batches/:batchId"
+            element={<DistributorJourneyPage />}
+          />
+        </Route>
+
+        {/* Distributor và Retailer tự cập nhật hồ sơ công ty */}
         <Route
-          path="/admin"
           element={
-            localStorage.getItem("role")?.replace("ROLE_", "") === "ADMIN"
-              ? <AdminOverviewPage />
-              : <Navigate to="/dashboard" replace />
+            <RoleRoute
+              allowedRoles={["DISTRIBUTOR", "RETAILER"]}
+            />
           }
-        />
-        <Route
-          path="/admin/batches"
-          element={
-            localStorage.getItem("role")?.replace("ROLE_", "") === "ADMIN"
-              ? <AdminBatchesPage />
-              : <Navigate to="/dashboard" replace />
-          }
-        />
-        <Route
-          path="/admin/records"
-          element={
-            localStorage.getItem("role")?.replace("ROLE_", "") === "ADMIN"
-              ? <AdminRecordsPage />
-              : <Navigate to="/dashboard" replace />
-          }
-        />
-        <Route
-          path="/admin/users"
-          element={
-            localStorage.getItem("role")?.replace("ROLE_", "") === "ADMIN"
-              ? <AdminUsersPage />
-              : <Navigate to="/dashboard" replace />
-          }
-        />
-        <Route
-          path="/admin/evaluations"
-          element={
-            localStorage.getItem("role")?.replace("ROLE_", "") === "ADMIN"
-              ? <AdminEvaluationsPage />
-              : <Navigate to="/dashboard" replace />
-          }
-        />
+        >
+          <Route
+            path="/company-profile"
+            element={<CompanyProfilePage />}
+          />
+        </Route>
       </Route>
 
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
 }

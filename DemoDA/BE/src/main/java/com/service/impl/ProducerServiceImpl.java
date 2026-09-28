@@ -32,12 +32,19 @@ public class ProducerServiceImpl implements ProducerService {
     private final RecordService recordService;
     private final VerifyService verifyService;
     private final StageAnchorTransactionRepository stageAnchorTransactionRepository;
+    private final ProducerPartnerService producerPartnerService;
 
     @Override
     @Transactional
     public ProducerBatchResponse createBatch(ProducerBatchRequest request, String username) {
         User producer = userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("User not found: " + username));
+
+        producerPartnerService.validateAssignment(
+                producer,
+                request.getDistributorId(),
+                request.getRetailerId()
+        );
 
         Batch batch = batchService.createBatchEntity(request, Role.PRODUCER);
         batch.setCreatedBy(producer);

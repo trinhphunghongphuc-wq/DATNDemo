@@ -8,7 +8,9 @@ import {
   Truck,
   Store,
   Package,
+  Handshake,
   LogOut,
+  Building2,
 } from "lucide-react";
 
 const menusByRole = {
@@ -22,17 +24,20 @@ const menusByRole = {
 
   PRODUCER: [
     { label: "Lô hàng của tôi", to: "/producer/batches", icon: Boxes },
+    { label: "Đối tác", to: "/producer/partners", icon: Handshake },
   ],
 
-  DISTRIBUTOR: [
-    { label: "Lô hàng được giao", to: "/distributor/batches", icon: Truck },
-    { label: "Danh sách xe", to: "/distributor/vehicles", icon: Package },
-  ],
+DISTRIBUTOR: [
+  { label: "Lô hàng được giao", to: "/distributor/batches", icon: Truck },
+  { label: "Danh sách xe", to: "/distributor/vehicles", icon: Package },
+  { label: "Hồ sơ công ty", to: "/company-profile", icon: Building2 },
+],
 
-  RETAILER: [
-    { label: "Lô hàng nhận", to: "/retailer/batches", icon: Store },
-    { label: "Đơn vị bán lẻ", to: "/retailer/retail-units", icon: Package },
-  ],
+RETAILER: [
+  { label: "Lô hàng nhận", to: "/retailer/batches", icon: Store },
+  { label: "Đơn vị bán lẻ", to: "/retailer/retail-units", icon: Package },
+  { label: "Hồ sơ công ty", to: "/company-profile", icon: Building2 },
+],
 };
 
 const roleLabels = {
@@ -45,7 +50,8 @@ const roleLabels = {
 export default function Sidebar() {
   const navigate = useNavigate();
 
-  // AuthResponse của BE trả username và role; LoginPage đã lưu hai giá trị này.
+  // AuthResponse của BE trả username và role;
+  // LoginPage đã lưu hai giá trị này.
   const username = localStorage.getItem("username") || "Tài khoản";
   const role = (localStorage.getItem("role") || "").replace(/^ROLE_/, "");
   const menus = menusByRole[role] ?? [];

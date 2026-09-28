@@ -52,10 +52,27 @@ public class AuthServiceImpl implements AuthService {
 
         Role role = request.getRole() != null ? request.getRole() : Role.CONSUMER;
 
+        if (role == Role.ADMIN) {
+            throw new IllegalArgumentException(
+                    "ADMIN accounts cannot be created through public registration"
+            );
+        }
+
+
         User user = new User();
         user.setUsername(request.getUsername());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setEmail(request.getEmail());
+        user.setCompanyName(
+                request.getCompanyName() == null
+                        ? null
+                        : request.getCompanyName().trim()
+        );
+        user.setCompanyAddress(
+                request.getCompanyAddress() == null
+                        ? null
+                        : request.getCompanyAddress().trim()
+        );
         user.setRole(role);
         user.setEnabled(true);
         user.setCreatedAt(LocalDateTime.now());
