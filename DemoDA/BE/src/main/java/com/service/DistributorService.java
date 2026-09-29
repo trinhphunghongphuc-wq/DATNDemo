@@ -26,4 +26,10 @@ public interface DistributorService {
     BatchDetailResponse getBatchDetail(Long batchId, Long distributorId);
 
     VerifyAllResponse verifyAllRecords(Long batchId, Long distributorId);
+
+    RecordItemResponse addWarehouseRecord(
+            Long batchId,
+            RecordRequest request,
+            Long distributorId
+    );
 }

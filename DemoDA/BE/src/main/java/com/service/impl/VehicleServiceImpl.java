@@ -32,6 +32,7 @@ public class VehicleServiceImpl implements VehicleService {
                 .sensorFirmware(vehicle.getSensorFirmware())
                 .distributorId(vehicle.getDistributorId())
                 .active(vehicle.getActive())
+                .lastSequence(vehicle.getLastSequence())
                 .build();
     }
 }

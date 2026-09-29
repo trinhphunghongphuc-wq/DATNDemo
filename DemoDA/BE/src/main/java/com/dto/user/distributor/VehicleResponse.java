@@ -18,4 +18,5 @@ public class VehicleResponse {
     private Long distributorId;
 
     private Boolean active;
+    private Long lastSequence;
 }

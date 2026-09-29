@@ -373,6 +373,35 @@ public class DistributorServiceImpl implements DistributorService {
         );
     }
 
+    @Override
+    @Transactional
+    public RecordItemResponse addWarehouseRecord(
+            Long batchId,
+            RecordRequest request,
+            Long distributorId
+    ) {
+        Batch batch = getBatchForDistributor(batchId, distributorId);
+        if (batch.getStatus() != BatchStatus.RECEIVED_BY_DISTRIBUTOR
+                && batch.getStatus() != BatchStatus.IN_DISTRIBUTION) {
+            throw new IllegalStateException("Distributor must receive batch before adding warehouse record");
+        }
+        if (request.getRecordType() != RecordType.WAREHOUSE) {
+            throw new IllegalArgumentException("Only WAREHOUSE record is allowed here");
+        }
+
+        Record saved = recordService.createRecordsForBatch(
+                batch, List.of(request), com.enums.Role.DISTRIBUTOR).get(0);
+        return RecordItemResponse.builder()
+                .recordId(saved.getId())
+                .recordKey(saved.getRecordKey())
+                .recordType(saved.getRecordType())
+                .rawJson(saved.getRawJson())
+                .leafHash(saved.getLeafHash())
+                .leafIndex(saved.getLeafIndex())
+                .createdAt(saved.getCreatedAt())
+                .build();
+    }
+
     private Batch getBatchForDistributor(
             Long batchId,
             Long distributorId

@@ -52,6 +52,16 @@ public class DistributorController {
         return ResponseEntity.ok(distributorService.receiveBatch(batchId, distributorId));
     }
 
+    @PostMapping("/batches/{batchId}/warehouse-record")
+    public ResponseEntity<RecordItemResponse> addWarehouseRecord(
+            @PathVariable Long batchId,
+            @Valid @RequestBody RecordRequest request,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(distributorService.addWarehouseRecord(
+                batchId, request, getCurrentUserId(authentication)));
+    }
+
 //    @PostMapping("/batches/{batchId}/transport-record")
 //    public ResponseEntity<RecordItemResponse> addTransportRecord(
 //            @PathVariable Long batchId,

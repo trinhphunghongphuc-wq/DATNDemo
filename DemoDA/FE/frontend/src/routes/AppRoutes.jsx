@@ -26,6 +26,10 @@ import AdminRecordsPage from "../pages/admin/AdminRecordsPage";
 import AdminUsersPage from "../pages/admin/AdminUsersPage";
 import AdminEvaluationsPage from "../pages/admin/AdminEvaluationsPage";
 
+import RetailerBatchesPage from "../pages/retailer/RetailerBatchesPage";
+import RetailerRecordsPage from "../pages/retailer/RetailerRecordsPage";
+
+
 function getRole() {
   return (localStorage.getItem("role") || "").replace(/^ROLE_/, "");
 }
@@ -159,6 +163,9 @@ export default function AppRoutes() {
             element={<CompanyProfilePage />}
           />
         </Route>
+
+        <Route path="/retailer/batches" element={<RetailerBatchesPage />} />
+        <Route path="/retailer/batches/:batchId/records" element={<RetailerRecordsPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
