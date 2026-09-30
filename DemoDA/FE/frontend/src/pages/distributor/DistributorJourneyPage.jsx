@@ -143,10 +143,10 @@ function FitJourney({ routePositions, points, origin, destination }) {
     const positions = routePositions.length
       ? routePositions
       : [
-          ...points.map((point) => [Number(point.latitude), Number(point.longitude)]),
-          ...(origin ? [[origin.lat, origin.lon]] : []),
-          ...(destination ? [[destination.lat, destination.lon]] : []),
-        ];
+        ...points.map((point) => [Number(point.latitude), Number(point.longitude)]),
+        ...(origin ? [[origin.lat, origin.lon]] : []),
+        ...(destination ? [[destination.lat, destination.lon]] : []),
+      ];
 
     const valid = positions.filter(
       ([lat, lon]) => Number.isFinite(lat) && Number.isFinite(lon)
@@ -245,8 +245,10 @@ export default function DistributorJourneyPage() {
   const [vehicles, setVehicles] = useState([]);
   const [vehicleId, setVehicleId] = useState("");
   const [demoCount, setDemoCount] = useState(8);
-  const [demoTemperature, setDemoTemperature] = useState("6.2");
-  const [demoHumidity, setDemoHumidity] = useState("78.5");
+
+  const [demoTemperature, setDemoTemperature] = useState("");
+  const [demoHumidity, setDemoHumidity] = useState("");
+
   const [demoRunning, setDemoRunning] = useState(false);
   const [demoProgress, setDemoProgress] = useState(0);
   const demoActive = useRef(false);
@@ -297,6 +299,24 @@ export default function DistributorJourneyPage() {
     };
   }, [batchId]);
 
+
+  useEffect(() => {
+    const category = batch?.productCategory;
+    if (
+      category?.temperatureMin == null ||
+      category?.temperatureMax == null ||
+      category?.humidityMin == null ||
+      category?.humidityMax == null
+    ) return;
+
+    setDemoTemperature(String(
+      (category.temperatureMin + category.temperatureMax) / 2
+    ));
+    setDemoHumidity(String(
+      (category.humidityMin + category.humidityMax) / 2
+    ));
+  }, [batch?.productCategory?.id]);
+
   const routePositions = useMemo(() => {
     const coordinates = journey?.plannedRoute?.coordinates;
     if (!Array.isArray(coordinates)) return [];
@@ -325,6 +345,10 @@ export default function DistributorJourneyPage() {
   async function handleStartDemo() {
     if (demoActive.current || demoStarting.current) return;
     const count = Number(demoCount);
+    if (demoTemperature.trim() === "" || demoHumidity.trim() === "") {
+      setError("Batch chưa có ngưỡng khuyến nghị; hãy nhập nhiệt độ và độ ẩm demo.");
+      return;
+    }
     const temperature = Number(demoTemperature);
     const humidity = Number(demoHumidity);
     if (!vehicleId) {
@@ -332,7 +356,7 @@ export default function DistributorJourneyPage() {
       return;
     }
     if (!Number.isInteger(count) || count < 2 || count > 100 || count > routePositions.length ||
-        !Number.isFinite(temperature) || !Number.isFinite(humidity) || humidity < 0 || humidity > 100) {
+      !Number.isFinite(temperature) || !Number.isFinite(humidity) || humidity < 0 || humidity > 100) {
       setError(`Chọn 2–${Math.min(100, routePositions.length)} điểm; kiểm tra nhiệt độ và độ ẩm (0–100%).`);
       return;
     }

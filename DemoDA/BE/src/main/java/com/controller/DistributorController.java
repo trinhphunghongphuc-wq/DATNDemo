@@ -16,7 +16,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
+import com.dto.user.distributor.VehicleCreateRequest;
+import org.springframework.http.HttpStatus;
 import java.util.List;
 
 @RestController
@@ -110,6 +111,21 @@ public class DistributorController {
     ) {
         Long distributorId = getCurrentUserId(authentication);
         return ResponseEntity.ok(distributorService.verifyAllRecords(batchId, distributorId));
+    }
+
+    @PostMapping("/vehicles")
+    public ResponseEntity<VehicleResponse> createVehicle(
+            @Valid @RequestBody VehicleCreateRequest request,
+            Authentication authentication
+    ) {
+        Long distributorId = getCurrentUserId(authentication);
+
+        VehicleResponse created = vehicleService.createVehicle(
+                request,
+                distributorId
+        );
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
     @GetMapping("/vehicles")

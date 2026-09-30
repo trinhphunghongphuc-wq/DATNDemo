@@ -45,4 +45,8 @@ public interface VehicleRepository
             @Param("vehicleId") Long vehicleId,
             @Param("distributorId") Long distributorId
     );
+
+    boolean existsByVehiclePlateIgnoreCase(String vehiclePlate);
+
+    boolean existsByDeviceIdIgnoreCase(String deviceId);
 }

@@ -7,6 +7,8 @@ import com.dto.record.RecordRequest;
 import com.dto.user.distributor.TransportSensorRecordRequest;
 import com.dto.verify.VerifyAllResponse;
 import com.entity.Batch;
+import com.dto.product.ProductCategoryResponse;
+import com.entity.ProductCategory;
 import com.entity.Record;
 import com.entity.Vehicle;
 import com.enums.BatchStatus;
@@ -38,6 +40,7 @@ public class DistributorServiceImpl implements DistributorService {
     private final ObjectMapper objectMapper;
     private final VehicleRepository vehicleRepository;
     private final DeviceSignatureService deviceSignatureService;
+    private ProductCategoryResponse productCategory;
 
     @Override
     public List<AdminBatchListResponse> getAssignedBatches(
@@ -463,6 +466,7 @@ public class DistributorServiceImpl implements DistributorService {
                 .status(batch.getStatus())
                 .anchorStatus(batch.getAnchorStatus())
                 .createdAt(batch.getCreatedAt())
+                .productCategory(toProductCategoryResponse(batch.getProductCategory()))
                 .recordCount(
                         batch.getRecords() == null
                                 ? 0
@@ -482,10 +486,31 @@ public class DistributorServiceImpl implements DistributorService {
                                                 .leafHash(record.getLeafHash())
                                                 .leafIndex(record.getLeafIndex())
                                                 .createdAt(record.getCreatedAt())
+
                                                 .build()
                                 )
                                 .toList()
                 )
                 .build();
     }
+
+    private ProductCategoryResponse toProductCategoryResponse(
+            ProductCategory category
+    ) {
+        if (category == null) {
+            return null;
+        }
+
+        return ProductCategoryResponse.builder()
+                .id(category.getId())
+                .name(category.getName())
+                .temperatureMin(category.getTemperatureMin())
+                .temperatureMax(category.getTemperatureMax())
+                .humidityMin(category.getHumidityMin())
+                .humidityMax(category.getHumidityMax())
+                .description(category.getDescription())
+                .build();
+    }
+
+
 }

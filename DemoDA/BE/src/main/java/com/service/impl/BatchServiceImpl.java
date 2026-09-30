@@ -16,13 +16,14 @@ import com.service.BatchService;
 import com.service.MerkleService;
 import com.service.RecordService;
 import org.springframework.stereotype.Service;
-
+import com.dto.product.ProductCategoryResponse;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import com.dto.product.ProductCategoryResponse;
 
 @Service
 public class BatchServiceImpl implements BatchService {
@@ -244,6 +245,22 @@ public class BatchServiceImpl implements BatchService {
         );
     }
 
+    private ProductCategoryResponse toProductCategoryResponse(ProductCategory category) {
+        if (category == null) {
+            return null;
+        }
+
+        return ProductCategoryResponse.builder()
+                .id(category.getId())
+                .name(category.getName())
+                .temperatureMin(category.getTemperatureMin())
+                .temperatureMax(category.getTemperatureMax())
+                .humidityMin(category.getHumidityMin())
+                .humidityMax(category.getHumidityMax())
+                .description(category.getDescription())
+                .build();
+    }
+
     @Override
     public BatchDetailResponse getBatchDetail(Long id) {
         Batch batch = batchRepository.findById(id)
@@ -266,6 +283,7 @@ public class BatchServiceImpl implements BatchService {
                 .createdAt(batch.getCreatedAt())
                 .recordCount(recordItems.size())
                 .records(recordItems)
+                .productCategory(toProductCategoryResponse(batch.getProductCategory()))
                 .build();
     }
 
@@ -291,6 +309,7 @@ public class BatchServiceImpl implements BatchService {
                 .createdAt(batch.getCreatedAt())
                 .recordCount(recordItems.size())
                 .records(recordItems)
+                .productCategory(toProductCategoryResponse(batch.getProductCategory()))
                 .build();
     }
 

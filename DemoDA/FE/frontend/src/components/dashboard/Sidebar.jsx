@@ -31,6 +31,7 @@ DISTRIBUTOR: [
   { label: "Lô hàng được giao", to: "/distributor/batches", icon: Truck },
   { label: "Danh sách xe", to: "/distributor/vehicles", icon: Package },
   { label: "Hồ sơ công ty", to: "/company-profile", icon: Building2 },
+  
 ],
 
 RETAILER: [

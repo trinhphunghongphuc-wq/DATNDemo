@@ -10,4 +10,6 @@ public interface ProductCategoryRepository extends JpaRepository<ProductCategory
     List<ProductCategory> findByActiveTrue();
 
     List<ProductCategory> findByNameContainingIgnoreCaseAndActiveTrue(String keyword);
+
+    boolean existsByNameIgnoreCase(String name);
 }

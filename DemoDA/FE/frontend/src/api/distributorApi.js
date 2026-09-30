@@ -14,3 +14,9 @@ export const planTransportRoute = (batchId, coordinates) =>
 
 export const getDistributorBatchDetail = (batchId) =>
   axiosClient.get(`/distributor/batches/${batchId}`);
+
+export const getVehicles = () =>
+  axiosClient.get("/distributor/vehicles");
+
+export const createVehicle = (data) =>
+  axiosClient.post("/distributor/vehicles", data);
