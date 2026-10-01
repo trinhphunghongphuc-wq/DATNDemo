@@ -6,6 +6,7 @@ public enum BatchStatus {
     ASSIGNED_TO_DISTRIBUTOR,   //Dành cho nghiệp vụ của Distributor
     RECEIVED_BY_DISTRIBUTOR,   //Dành cho nghiệp vụ của Distributor
     IN_DISTRIBUTION,           //Dành cho nghiệp vụ của Distributor
+    RETURNED_TO_DISTRIBUTOR,  //Nghiệp vụ trả hàng
     DELIVERED_TO_RETAILER,  //Dành cho nghiệp vụ của Retailer
     DELIVERY_REJECTED,      //Dành cho nghiệp vụ của Retailer
     AT_RETAIL,              //Dành cho nghiệp vụ của Retailer

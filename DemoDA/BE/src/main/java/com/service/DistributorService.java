@@ -6,7 +6,7 @@ import com.dto.record.RecordItemResponse;
 import com.dto.record.RecordRequest;
 import com.dto.user.distributor.TransportSensorRecordRequest;
 import com.dto.verify.VerifyAllResponse;
-
+import com.dto.user.distributor.ReturnReceiptRequest;
 import java.util.List;
 
 public interface DistributorService {
@@ -30,6 +30,12 @@ public interface DistributorService {
     RecordItemResponse addWarehouseRecord(
             Long batchId,
             RecordRequest request,
+            Long distributorId
+    );
+
+    AdminBatchListResponse receiveReturnedBatch(
+            Long batchId,
+            ReturnReceiptRequest request,
             Long distributorId
     );
 }

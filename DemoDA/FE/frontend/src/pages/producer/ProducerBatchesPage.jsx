@@ -247,40 +247,40 @@ export default function ProducerBatchesPage() {
   }, []);
 
   useEffect(() => {
-  let cancelled = false;
+    let cancelled = false;
 
-  async function loadPartners() {
-    try {
-      const [distributorResponse, retailerResponse] =
-        await Promise.all([
-          getMyPartners("DISTRIBUTOR"),
-          getMyPartners("RETAILER"),
-        ]);
+    async function loadPartners() {
+      try {
+        const [distributorResponse, retailerResponse] =
+          await Promise.all([
+            getMyPartners("DISTRIBUTOR"),
+            getMyPartners("RETAILER"),
+          ]);
 
-      if (!cancelled) {
-        setDistributors(distributorResponse.data ?? []);
-        setRetailers(retailerResponse.data ?? []);
-      }
-    } catch (err) {
-      if (!cancelled) {
-        setError(
-          err?.response?.data?.message ||
-          "Không tải được danh sách đối tác."
-        );
-      }
-    } finally {
-      if (!cancelled) {
-        setPartnersLoading(false);
+        if (!cancelled) {
+          setDistributors(distributorResponse.data ?? []);
+          setRetailers(retailerResponse.data ?? []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err?.response?.data?.message ||
+            "Không tải được danh sách đối tác."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setPartnersLoading(false);
+        }
       }
     }
-  }
 
-  loadPartners();
+    loadPartners();
 
-  return () => {
-    cancelled = true;
-  };
-}, []);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function changeCreateRecordType(recordType) {
     setForm((current) => ({
@@ -352,58 +352,67 @@ export default function ProducerBatchesPage() {
     await loadList();
   }
 
-  async function handleCreate(event) {
-    event.preventDefault();
-    setError("");
-    setNotice("");
+async function handleCreate(event) {
+  event.preventDefault();
+  setError("");
+  setNotice("");
 
-    const hasDistributor = form.distributorId !== "";
-    const hasRetailer = form.retailerId !== "";
+  const hasDistributor = form.distributorId !== "";
+  const hasRetailer = form.retailerId !== "";
 
-    if (hasDistributor !== hasRetailer) {
-      setError(
-        "Nếu chỉ định nơi phân phối, hãy nhập cả Distributor ID và Retailer ID."
-      );
-      return;
-    }
-
-    const body = {
-      name: form.name.trim(),
-      expiryDate: form.expiryDate,
-      records: [buildRecordRequest(form)],
-
-      ...(form.productCategoryId !== "" && {
-        productCategoryId: Number(form.productCategoryId),
-      }),
-
-      ...(form.totalWeight !== "" && {
-        totalWeight: Number(form.totalWeight),
-      }),
-
-      ...(hasDistributor && {
-        distributorId: Number(form.distributorId),
-        retailerId: Number(form.retailerId),
-      }),
-    };
-
-    setBusy(true);
-
-    try {
-      const response = await createProducerBatch(body);
-
-      setForm(emptyCreateForm());
-      setShowCreate(false);
-
-      await loadList();
-      await openBatch(response.data.id);
-
-      setNotice(`Đã tạo batch #${response.data.id}.`);
-    } catch (err) {
-      setError(messageOf(err));
-    } finally {
-      setBusy(false);
-    }
+  if (hasDistributor !== hasRetailer) {
+    setError(
+      "Nếu chỉ định nơi phân phối, hãy nhập cả Distributor ID và Retailer ID."
+    );
+    return;
   }
+
+  const totalWeight =
+    form.totalWeight !== ""
+      ? Number(form.totalWeight)
+      : form.recordType === "HARVEST"
+        ? Number(form.fields.harvestedWeightKg)
+        : NaN;
+
+  if (!Number.isFinite(totalWeight) || totalWeight <= 0) {
+    setError("Vui lòng nhập tổng khối lượng lô lớn hơn 0.");
+    return;
+  }
+
+  const body = {
+    name: form.name.trim(),
+    expiryDate: form.expiryDate,
+    records: [buildRecordRequest(form)],
+    totalWeight,
+
+    ...(form.productCategoryId !== "" && {
+      productCategoryId: Number(form.productCategoryId),
+    }),
+
+    ...(hasDistributor && {
+      distributorId: Number(form.distributorId),
+      retailerId: Number(form.retailerId),
+    }),
+  };
+
+  setBusy(true);
+
+  try {
+    const response = await createProducerBatch(body);
+
+    setForm(emptyCreateForm());
+    setShowCreate(false);
+
+    await loadList();
+    await openBatch(response.data.id);
+
+    setNotice(`Đã tạo batch #${response.data.id}.`);
+  } catch (err) {
+    setError(messageOf(err));
+  } finally {
+    setBusy(false);
+  }
+}
 
   async function handleAddRecord(event) {
     event.preventDefault();
@@ -732,8 +741,8 @@ export default function ProducerBatchesPage() {
                   type="button"
                   onClick={() => openBatch(batch.id)}
                   className={`w-full rounded-xl border p-3 text-left ${selected?.id === batch.id
-                      ? "border-blue-500 bg-blue-500/10"
-                      : "border-slate-800 hover:bg-slate-800"
+                    ? "border-blue-500 bg-blue-500/10"
+                    : "border-slate-800 hover:bg-slate-800"
                     }`}
                 >
                   <strong className="block">{batch.name}</strong>

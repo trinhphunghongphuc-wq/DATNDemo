@@ -18,6 +18,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import com.service.RetailUnitService;
 
+import com.enums.BatchStatus;
+import com.service.IpfsService;
+import org.springframework.http.MediaType;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -30,7 +34,7 @@ public class RetailerController {
 
     private final RetailerService retailerService;
     private final RetailUnitService retailUnitService;
-
+    private final IpfsService ipfsService;
 
     @GetMapping("/batches")
     public ResponseEntity<List<AdminBatchListResponse>> getReceivedBatches(Authentication authentication) {
@@ -134,6 +138,7 @@ public class RetailerController {
         return ResponseEntity.ok(retailUnitService.getRetailUnitDetail(retailUnitId, retailerId));
     }
 
+    @Valid
     @PostMapping("/batches/{batchId}/reject-delivery")
     public ResponseEntity<AdminBatchListResponse> rejectDelivery(
             @PathVariable Long batchId,
@@ -147,5 +152,31 @@ public class RetailerController {
     private Long getCurrentUserId(Authentication authentication) {
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         return userDetails.getId();
+    }
+
+
+    @PostMapping(
+            value = "/batches/{batchId}/return-evidence",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
+    public ResponseEntity<Map<String, String>> uploadReturnEvidence(
+            @PathVariable Long batchId,
+            @RequestParam("file") MultipartFile file,
+            Authentication authentication
+    ) {
+        Long retailerId = getCurrentUserId(authentication);
+        BatchDetailResponse batch = retailerService.getBatchDetail(batchId, retailerId);
+
+        if (batch.getStatus() != BatchStatus.DELIVERED_TO_RETAILER) {
+            throw new IllegalStateException("Batch is not awaiting retailer decision");
+        }
+
+        String cid = ipfsService.uploadImage(file);
+
+        if (cid == null || cid.isBlank()) {
+            throw new IllegalStateException("IPFS upload returned an empty CID");
+        }
+
+        return ResponseEntity.ok(Map.of("cid", cid));
     }
 }

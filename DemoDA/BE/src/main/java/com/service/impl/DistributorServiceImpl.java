@@ -4,6 +4,7 @@ import com.dto.batch.AdminBatchListResponse;
 import com.dto.batch.BatchDetailResponse;
 import com.dto.record.RecordItemResponse;
 import com.dto.record.RecordRequest;
+import com.dto.user.distributor.ReturnReceiptRequest;
 import com.dto.user.distributor.TransportSensorRecordRequest;
 import com.dto.verify.VerifyAllResponse;
 import com.entity.Batch;
@@ -24,6 +25,9 @@ import com.service.VerifyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.dto.user.distributor.ReturnReceiptRequest;
+import com.enums.Role;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -403,6 +407,47 @@ public class DistributorServiceImpl implements DistributorService {
                 .leafIndex(saved.getLeafIndex())
                 .createdAt(saved.getCreatedAt())
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public AdminBatchListResponse receiveReturnedBatch(
+            Long batchId,
+            ReturnReceiptRequest request,
+            Long distributorId
+    ) {
+        Batch batch = getBatchForDistributor(batchId, distributorId);
+
+        if (batch.getStatus() != BatchStatus.DELIVERY_REJECTED) {
+            throw new IllegalStateException("Batch has not been rejected by retailer");
+        }
+
+        if (request == null
+                || request.getWarehouseName() == null
+                || request.getWarehouseName().isBlank()
+                || request.getWarehouseAddress() == null
+                || request.getWarehouseAddress().isBlank()) {
+            throw new IllegalArgumentException("Warehouse name and address are required");
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("batchId", batchId);
+        payload.put("distributorId", distributorId);
+        payload.put("warehouseName", request.getWarehouseName().trim());
+        payload.put("warehouseAddress", request.getWarehouseAddress().trim());
+        payload.put("returnedWeight", batch.getRemainingWeight());
+
+        RecordRequest recordRequest = new RecordRequest();
+        recordRequest.setRecordType(RecordType.RETURN_RECEIPT);
+        recordRequest.setRawJson(objectMapper.valueToTree(payload).toString());
+
+        // Ghi record khi batch còn DELIVERY_REJECTED.
+        recordService.createRecordsForBatch(
+                batch, List.of(recordRequest), Role.DISTRIBUTOR
+        );
+
+        batch.setStatus(BatchStatus.RETURNED_TO_DISTRIBUTOR);
+        return toBatchListResponse(batchRepository.save(batch));
     }
 
     private Batch getBatchForDistributor(

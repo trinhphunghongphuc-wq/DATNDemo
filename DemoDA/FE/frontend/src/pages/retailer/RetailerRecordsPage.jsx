@@ -13,6 +13,9 @@ export default function RetailerRecordsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
+  const [rejectForm, setRejectForm] = useState({ reason: "" });
+  const [evidenceFile, setEvidenceFile] = useState(null);
   const [form, setForm] = useState({
     location: "",
     condition: "GOOD",
@@ -54,6 +57,57 @@ export default function RetailerRecordsPage() {
     }
   }
 
+async function rejectDelivery(event) {
+  event.preventDefault();
+  setBusy(true);
+  setError("");
+  setNotice("");
+
+  try {
+    const reason = rejectForm.reason.trim();
+    const returnedWeight = Number(batch?.remainingWeight);
+
+    if (!reason) {
+      throw new Error("Vui lòng nhập lý do trả hàng.");
+    }
+    if (!evidenceFile) {
+      throw new Error("Hãy chọn ảnh minh chứng.");
+    }
+    if (!Number.isFinite(returnedWeight) || returnedWeight <= 0) {
+      throw new Error("Batch chưa có khối lượng trả hợp lệ.");
+    }
+
+    const uploadForm = new FormData();
+    uploadForm.append("file", evidenceFile);
+
+    const uploadResponse = await axiosClient.post(
+      `/retailer/batches/${batchId}/return-evidence`,
+      uploadForm
+    );
+
+    const evidenceCid = uploadResponse.data?.cid;
+    if (typeof evidenceCid !== "string" || !evidenceCid.trim()) {
+      throw new Error(
+        `API upload ảnh không trả cid. Response: ${JSON.stringify(uploadResponse.data)}`
+      );
+    }
+
+    await axiosClient.post(`/retailer/batches/${batchId}/reject-delivery`, {
+      reason,
+      returnedWeight,
+      evidenceCid,
+    });
+
+    await loadBatch();
+    setNotice("Đã từ chối lô hàng và lưu record minh chứng.");
+    setRejectForm({ reason: "" });
+    setEvidenceFile(null);
+  } catch (err) {
+    setError(errorMessage(err));
+  } finally {
+    setBusy(false);
+  }
+}
   async function addRetailRecord(event) {
     event.preventDefault();
     setBusy(true);
@@ -105,6 +159,41 @@ export default function RetailerRecordsPage() {
             {busy ? "Đang xử lý..." : "Xác nhận nhận hàng"}
           </button>
         </div>
+      )}
+
+      {batch?.status === "DELIVERED_TO_RETAILER" && (
+        <form onSubmit={rejectDelivery} className="space-y-3 rounded-xl border border-red-500/30 bg-[#111827] p-4">
+          <h2 className="font-semibold">Từ chối nhận và trả toàn bộ lô</h2>
+          <p className="text-sm text-slate-400">
+            Khối lượng trả: {batch.remainingWeight ?? "Chưa có dữ liệu"} kg
+          </p>
+
+          <label className="block text-sm">
+            Lý do trả hàng
+            <textarea
+              required
+              value={rejectForm.reason}
+              onChange={(e) => setRejectForm({ reason: e.target.value })}
+              className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
+            />
+          </label>
+
+          <label className="block text-sm">
+            Ảnh minh chứng
+            <input
+              required
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => setEvidenceFile(e.target.files?.[0] ?? null)}
+              className="mt-1 block w-full"
+            />
+          </label>
+
+          <button type="submit" disabled={busy || batch.remainingWeight == null}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold disabled:opacity-40">
+            {busy ? "Đang xử lý..." : "Từ chối nhận hàng"}
+          </button>
+        </form>
       )}
 
       {batch?.status === "AT_RETAIL" && (

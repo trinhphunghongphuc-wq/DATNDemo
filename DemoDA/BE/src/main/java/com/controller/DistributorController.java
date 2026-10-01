@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 import com.dto.user.distributor.VehicleCreateRequest;
 import org.springframework.http.HttpStatus;
 import java.util.List;
+import com.dto.user.distributor.ReturnReceiptRequest;
 
 @RestController
 @RequestMapping("/api/distributor")
@@ -136,5 +137,17 @@ public class DistributorController {
     private Long getCurrentUserId(Authentication authentication) {
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         return userDetails.getId();
+    }
+
+    @PostMapping("/batches/{batchId}/receive-return")
+    public ResponseEntity<AdminBatchListResponse> receiveReturn(
+            @PathVariable Long batchId,
+            @Valid @RequestBody ReturnReceiptRequest request,
+            Authentication authentication
+    ) {
+        Long distributorId = getCurrentUserId(authentication);
+        return ResponseEntity.ok(
+                distributorService.receiveReturnedBatch(batchId, request, distributorId)
+        );
     }
 }

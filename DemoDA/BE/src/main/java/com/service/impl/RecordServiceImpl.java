@@ -65,7 +65,8 @@ public class RecordServiceImpl implements RecordService {
 
     private void validateStageCanAddRecord(
             Batch batch,
-            RecordStage recordStage
+            RecordStage recordStage,
+            RecordType recordType
     ) {
         BatchStatus status = batch.getStatus();
 
@@ -79,15 +80,20 @@ public class RecordServiceImpl implements RecordService {
                     status == BatchStatus.RECEIVED_BY_DISTRIBUTOR
                             || status == BatchStatus.IN_DISTRIBUTION;
 
-            case RETAILER ->
-                    status == BatchStatus.AT_RETAIL;
+            case RETAILER -> switch (recordType) {
+                case RETAIL -> status == BatchStatus.AT_RETAIL;
+                case DELIVERY_REJECTION ->
+                        status == BatchStatus.DELIVERED_TO_RETAILER;
+                case RETURN_RECEIPT ->
+                        status == BatchStatus.DELIVERY_REJECTED;
+                default -> false;
+            };
         };
 
         if (!allowed) {
             throw new IllegalStateException(
-                    "Cannot add " + recordStage
-                            + " record when batch status is "
-                            + status
+                    "Cannot add " + recordType
+                            + " when batch status is " + status
             );
         }
     }
@@ -169,7 +175,7 @@ public class RecordServiceImpl implements RecordService {
                     resolveRecordStage(request.getRecordType());
 
             // Chặn sai role/state trước khi tạo dữ liệu trên IPFS.
-            validateStageCanAddRecord(batch, recordStage);
+            validateStageCanAddRecord(batch, recordStage, request.getRecordType());
 
             /*
              * Kiểm tra trước khi hash, mã hóa và upload IPFS,
@@ -308,7 +314,7 @@ public class RecordServiceImpl implements RecordService {
             case TRANSPORT, WAREHOUSE ->
                     RecordStage.DISTRIBUTOR;
 
-            case RETAIL ->
+            case RETAIL, DELIVERY_REJECTION, RETURN_RECEIPT ->
                     RecordStage.RETAILER;
         };
     }
@@ -339,10 +345,14 @@ public class RecordServiceImpl implements RecordService {
 
             case DISTRIBUTOR ->
                     recordType == RecordType.TRANSPORT
-                            || recordType == RecordType.WAREHOUSE;
+                            || recordType == RecordType.WAREHOUSE
+                            || recordType == RecordType.RETURN_RECEIPT;
 
             case RETAILER ->
-                    recordType == RecordType.RETAIL;
+                    recordType == RecordType.RETAIL
+                            || recordType == RecordType.DELIVERY_REJECTION;
+
+
 
             case CONSUMER -> false;
         };
@@ -407,6 +417,8 @@ public class RecordServiceImpl implements RecordService {
             case TRANSPORT -> "TRAN";
             case WAREHOUSE -> "WARE";
             case RETAIL -> "RETA";
+            case DELIVERY_REJECTION -> "REJC";
+            case RETURN_RECEIPT -> "RTRN";
         };
 
         String datePart = LocalDate.now()

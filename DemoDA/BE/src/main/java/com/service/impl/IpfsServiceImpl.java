@@ -10,7 +10,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
-
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 import java.nio.charset.StandardCharsets;
 
 @Service
@@ -112,6 +113,71 @@ public class IpfsServiceImpl implements IpfsService {
                             + ". Cause: "
                             + e.getMessage(),
                     e
+            );
+        }
+    }
+
+    @Override
+    public String uploadImage(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Evidence image is required");
+        }
+
+        String extension = switch (file.getContentType() == null
+                ? "" : file.getContentType()) {
+            case "image/jpeg" -> "jpg";
+            case "image/png" -> "png";
+            case "image/webp" -> "webp";
+            default -> throw new IllegalArgumentException(
+                    "Only JPEG, PNG and WebP images are supported"
+            );
+        };
+
+        if (file.getSize() > 5 * 1024 * 1024) {
+            throw new IllegalArgumentException("Image must be at most 5 MB");
+        }
+
+        try {
+            ByteArrayResource image = new ByteArrayResource(file.getBytes()) {
+                @Override
+                public String getFilename() {
+                    return "return-evidence." + extension;
+                }
+            };
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("file", image);
+
+            String responseBody = restClient.post()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/api/v0/add")
+                            .queryParam("pin", "true")
+                            .queryParam("cid-version", "1")
+                            .build())
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(body)
+                    .retrieve()
+                    .body(String.class);
+
+            if (responseBody == null || responseBody.isBlank()) {
+                throw new IllegalStateException("IPFS returned an empty response");
+            }
+
+            JsonNode responseJson = objectMapper.readTree(responseBody.trim());
+            String cid = responseJson.path("Hash").asText();
+
+            if (cid.isBlank()) {
+                throw new IllegalStateException(
+                        "IPFS response does not contain Hash: " + responseBody
+                );
+            }
+
+            return cid;
+        } catch (IllegalStateException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new IllegalStateException(
+                    "Cannot upload evidence image to IPFS", exception
             );
         }
     }

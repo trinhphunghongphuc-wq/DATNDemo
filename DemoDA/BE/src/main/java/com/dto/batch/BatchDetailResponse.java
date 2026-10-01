@@ -28,4 +28,5 @@ public class BatchDetailResponse {
 
     private List<RecordItemResponse> records;
     private ProductCategoryResponse productCategory;
+    private Double remainingWeight;
 }

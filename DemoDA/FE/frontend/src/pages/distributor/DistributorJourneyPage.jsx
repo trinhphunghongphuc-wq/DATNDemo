@@ -260,6 +260,14 @@ export default function DistributorJourneyPage() {
     humidity: "",
     note: "",
   });
+
+  const [returnWarehouse, setReturnWarehouse] = useState({
+    warehouseName: "",
+    warehouseAddress: "",
+  });
+
+
+  const [savingReturn, setSavingReturn] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -521,6 +529,33 @@ export default function DistributorJourneyPage() {
     }
   }
 
+
+  async function handleReceiveReturn(event) {
+    event.preventDefault();
+    setSavingReturn(true);
+    setError("");
+    setNotice("");
+
+    try {
+      await axiosClient.post(
+        `/distributor/batches/${batchId}/receive-return`,
+        {
+          warehouseName: returnWarehouse.warehouseName.trim(),
+          warehouseAddress: returnWarehouse.warehouseAddress.trim(),
+        }
+      );
+
+      const response = await getDistributorBatchDetail(batchId);
+      setBatch(response.data);
+      setReturnWarehouse({ warehouseName: "", warehouseAddress: "" });
+      setNotice("Đã xác nhận hàng trả về kho và lưu RETURN_RECEIPT record.");
+    } catch (err) {
+      setError(err.response?.data?.message ?? "Không nhận được hàng trả về.");
+    } finally {
+      setSavingReturn(false);
+    }
+  }
+
   if (loading) return <p className="text-slate-400">Đang tải hành trình...</p>;
 
   return (
@@ -638,6 +673,38 @@ export default function DistributorJourneyPage() {
           </label>
           <button type="submit" disabled={savingWarehouse} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold disabled:opacity-40">
             {savingWarehouse ? "Đang lưu..." : "Lưu WAREHOUSE record"}
+          </button>
+        </form>
+      )}
+
+      {batch?.status === "DELIVERY_REJECTED" && (
+        <form onSubmit={handleReceiveReturn}
+          className="space-y-3 rounded-xl border border-amber-500/30 bg-[#111827] p-4">
+          <h2 className="font-semibold">Nhận hàng Retailer trả về</h2>
+
+          <input
+            required
+            placeholder="Tên kho Distributor"
+            value={returnWarehouse.warehouseName}
+            onChange={(e) => setReturnWarehouse((old) => ({
+              ...old, warehouseName: e.target.value
+            }))}
+            className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
+          />
+
+          <input
+            required
+            placeholder="Địa chỉ kho"
+            value={returnWarehouse.warehouseAddress}
+            onChange={(e) => setReturnWarehouse((old) => ({
+              ...old, warehouseAddress: e.target.value
+            }))}
+            className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
+          />
+
+          <button type="submit" disabled={savingReturn}
+            className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold disabled:opacity-40">
+            {savingReturn ? "Đang lưu..." : "Xác nhận hàng đã về kho"}
           </button>
         </form>
       )}
