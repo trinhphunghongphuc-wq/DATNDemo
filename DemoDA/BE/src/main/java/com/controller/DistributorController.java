@@ -16,8 +16,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
+import com.dto.user.distributor.VehicleCreateRequest;
+import org.springframework.http.HttpStatus;
 import java.util.List;
+import com.dto.user.distributor.ReturnReceiptRequest;
 
 @RestController
 @RequestMapping("/api/distributor")
@@ -50,6 +52,16 @@ public class DistributorController {
         System.out.println("principal class = " + authentication.getPrincipal().getClass().getName());
 
         return ResponseEntity.ok(distributorService.receiveBatch(batchId, distributorId));
+    }
+
+    @PostMapping("/batches/{batchId}/warehouse-record")
+    public ResponseEntity<RecordItemResponse> addWarehouseRecord(
+            @PathVariable Long batchId,
+            @Valid @RequestBody RecordRequest request,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(distributorService.addWarehouseRecord(
+                batchId, request, getCurrentUserId(authentication)));
     }
 
 //    @PostMapping("/batches/{batchId}/transport-record")
@@ -102,6 +114,21 @@ public class DistributorController {
         return ResponseEntity.ok(distributorService.verifyAllRecords(batchId, distributorId));
     }
 
+    @PostMapping("/vehicles")
+    public ResponseEntity<VehicleResponse> createVehicle(
+            @Valid @RequestBody VehicleCreateRequest request,
+            Authentication authentication
+    ) {
+        Long distributorId = getCurrentUserId(authentication);
+
+        VehicleResponse created = vehicleService.createVehicle(
+                request,
+                distributorId
+        );
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
     @GetMapping("/vehicles")
     public ResponseEntity<List<VehicleResponse>> getMyVehicles(Authentication authentication) {
         Long distributorId = getCurrentUserId(authentication);
@@ -110,5 +137,17 @@ public class DistributorController {
     private Long getCurrentUserId(Authentication authentication) {
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         return userDetails.getId();
+    }
+
+    @PostMapping("/batches/{batchId}/receive-return")
+    public ResponseEntity<AdminBatchListResponse> receiveReturn(
+            @PathVariable Long batchId,
+            @Valid @RequestBody ReturnReceiptRequest request,
+            Authentication authentication
+    ) {
+        Long distributorId = getCurrentUserId(authentication);
+        return ResponseEntity.ok(
+                distributorService.receiveReturnedBatch(batchId, request, distributorId)
+        );
     }
 }

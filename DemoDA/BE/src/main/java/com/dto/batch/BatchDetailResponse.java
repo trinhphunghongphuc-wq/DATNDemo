@@ -4,7 +4,7 @@ import com.dto.record.RecordItemResponse;
 import com.enums.AnchorStatus;
 import com.enums.BatchStatus;
 import lombok.*;
-
+import com.dto.product.ProductCategoryResponse;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -27,4 +27,6 @@ public class BatchDetailResponse {
     private Integer recordCount;
 
     private List<RecordItemResponse> records;
+    private ProductCategoryResponse productCategory;
+    private Double remainingWeight;
 }

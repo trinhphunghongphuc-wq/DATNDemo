@@ -38,6 +38,12 @@ public class User {
     private LocalDateTime createdAt;
 
 
+    @Column(name = "company_name", length = 200)
+    private String companyName;
+
+    @Column(name = "company_address", length = 500)
+    private String companyAddress;
+
     public User() {
     }
 

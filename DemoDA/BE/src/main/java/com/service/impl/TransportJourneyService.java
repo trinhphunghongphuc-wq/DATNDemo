@@ -20,12 +20,13 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
-
+import lombok.extern.slf4j.Slf4j;
 import java.net.URI;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
+@Slf4j
 @Service
 public class TransportJourneyService {
 
@@ -162,6 +163,12 @@ public class TransportJourneyService {
                     points
             );
         } catch (Exception e) {
+            log.error(
+                    "Cannot load transport journey for batchId={}",
+                    batchId,
+                    e
+            );
+
             throw new IllegalStateException(
                     "Cannot load transport journey",
                     e

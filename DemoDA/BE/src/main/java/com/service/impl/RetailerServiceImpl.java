@@ -25,6 +25,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.transaction.annotation.Transactional;
+
 @Service
 @RequiredArgsConstructor
 public class RetailerServiceImpl implements RetailerService {
@@ -32,6 +35,7 @@ public class RetailerServiceImpl implements RetailerService {
     private final BatchRepository batchRepository;
     private final RecordService recordService;
     private final VerifyService verifyService;
+    private final ObjectMapper objectMapper;
 
     @Override
     public List<AdminBatchListResponse> getReceivedBatches(Long retailerId) {
@@ -176,23 +180,55 @@ public class RetailerServiceImpl implements RetailerService {
     }
 
     @Override
+    @Transactional
     public AdminBatchListResponse rejectDelivery(
             Long batchId,
             Long retailerId,
             RejectDeliveryRequest request
     ) {
-
         Batch batch = getBatchForRetailer(batchId, retailerId);
 
         if (batch.getStatus() != BatchStatus.DELIVERED_TO_RETAILER) {
-            throw new RuntimeException("Batch is not delivered to retailer yet");
+            throw new IllegalStateException("Batch is not delivered to retailer yet");
         }
 
+        if (request == null
+                || request.getReason() == null
+                || request.getReason().isBlank()
+                || request.getEvidenceCid() == null
+                || request.getEvidenceCid().isBlank()) {
+            throw new IllegalArgumentException("Reason and evidence CID are required");
+        }
+
+        Double remainingWeight = batch.getRemainingWeight();
+        Double returnedWeight = request.getReturnedWeight();
+
+        if (remainingWeight == null || returnedWeight == null
+                || !Double.isFinite(returnedWeight)
+                || Double.compare(returnedWeight, remainingWeight) != 0) {
+            throw new IllegalArgumentException(
+                    "This flow only supports returning the entire remaining batch"
+            );
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("batchId", batchId);
+        payload.put("retailerId", retailerId);
+        payload.put("returnedWeight", returnedWeight);
+        payload.put("reason", request.getReason().trim());
+        payload.put("evidenceCid", request.getEvidenceCid().trim());
+
+        RecordRequest recordRequest = new RecordRequest();
+        recordRequest.setRecordType(RecordType.DELIVERY_REJECTION);
+        recordRequest.setRawJson(objectMapper.valueToTree(payload).toString());
+
+        // Ghi record khi batch còn DELIVERED_TO_RETAILER.
+        recordService.createRecordsForBatch(
+                batch, List.of(recordRequest), Role.RETAILER
+        );
+
         batch.setStatus(BatchStatus.DELIVERY_REJECTED);
-
-        Batch savedBatch = batchRepository.save(batch);
-
-        return toBatchListResponse(savedBatch);
+        return toBatchListResponse(batchRepository.save(batch));
     }
 
 
@@ -220,6 +256,7 @@ public class RetailerServiceImpl implements RetailerService {
                 .status(batch.getStatus())
                 .anchorStatus(batch.getAnchorStatus())
                 .createdAt(batch.getCreatedAt())
+                .remainingWeight(batch.getRemainingWeight())
                 .records(
                         batch.getRecords()
                                 .stream()

@@ -29,6 +29,35 @@ function formatDateTime(value) {
   });
 }
 
+function groupTimelineSteps(steps = []) {
+  const sorted = [...steps].sort(
+    (a, b) => (a.leafIndex ?? 0) - (b.leafIndex ?? 0)
+  );
+
+  const groups = [];
+
+  for (const step of sorted) {
+    const isTransport = step.recordKey?.startsWith("TRAN");
+    const previous = groups[groups.length - 1];
+
+    if (isTransport && previous?.type === "transport") {
+      previous.records.push(step);
+    } else if (isTransport) {
+      groups.push({
+        type: "transport",
+        records: [step],
+      });
+    } else {
+      groups.push({
+        type: "record",
+        record: step,
+      });
+    }
+  }
+
+  return groups;
+}
+
 export default function TraceBatchPage() {
   const { batchCode } = useParams();
 
@@ -50,7 +79,7 @@ export default function TraceBatchPage() {
       } catch (err) {
         setError(
           err.response?.data?.message ||
-            "Không thể tải thông tin truy xuất của lô hàng."
+          "Không thể tải thông tin truy xuất của lô hàng."
         );
       } finally {
         setLoading(false);
@@ -106,7 +135,70 @@ export default function TraceBatchPage() {
           </h2>
 
           <div className="mt-5 space-y-5 border-l-2 border-emerald-300 pl-5">
-            {traceability.steps?.map((step) => {
+            {groupTimelineSteps(traceability.steps).map((group) => {
+              if (group.type === "transport") {
+                const first = group.records[0];
+                const last = group.records[group.records.length - 1];
+
+                return (
+                  <article
+                    key={`transport-${first.recordKey}`}
+                    className="relative rounded-xl border border-slate-200 bg-slate-50 p-5"
+                  >
+                    <span className="absolute -left-[31px] top-6 h-4 w-4 rounded-full bg-emerald-600 ring-4 ring-slate-100" />
+
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="font-bold text-emerald-700">
+                        Chặng vận chuyển
+                      </h3>
+                      <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
+                        {group.records.length} điểm cảm biến
+                      </span>
+                    </div>
+
+                    <p className="mt-2 text-sm text-slate-600">
+                      Ghi nhận từ {formatDateTime(first.createdAt)} đến{" "}
+                      {formatDateTime(last.createdAt)}
+                    </p>
+
+                    <p className="mt-1 text-xs text-slate-500">
+                      Dữ liệu thiết bị được mã hóa; mỗi điểm có record và mã băm riêng.
+                    </p>
+
+                    <details className="mt-4 text-sm text-slate-700">
+                      <summary className="cursor-pointer font-medium">
+                        Xem {group.records.length} điểm vận chuyển
+                      </summary>
+
+                      <div className="mt-3 space-y-2">
+                        {group.records.map((record, index) => (
+                          <div
+                            key={record.recordKey}
+                            className="rounded-lg border border-slate-200 bg-white p-3"
+                          >
+                            <p className="font-medium">
+                              Điểm {index + 1} · {formatDateTime(record.createdAt)}
+                            </p>
+                            <p className="mt-1 break-all text-xs text-slate-500">
+                              Record: {record.recordKey}
+                            </p>
+                            <details className="mt-2 text-xs">
+                              <summary className="cursor-pointer">
+                                Xem mã băm Merkle
+                              </summary>
+                              <p className="mt-2 break-all font-mono">
+                                {record.leafHash}
+                              </p>
+                            </details>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  </article>
+                );
+              }
+
+              const step = group.record;
               const data = parseRawJson(step.rawJson);
 
               return (
