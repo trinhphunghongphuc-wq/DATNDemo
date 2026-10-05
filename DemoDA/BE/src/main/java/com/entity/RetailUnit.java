@@ -57,4 +57,7 @@ public class RetailUnit {
     private Batch batch;
 
     private LocalDateTime createdAt;
+
+    @Column(name = "retail_record_key", length = 100)
+    private String retailRecordKey;
 }

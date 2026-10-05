@@ -50,5 +50,6 @@ public class RetailUnitResponse {
     private Double batchRemainingWeight;
 
     private LocalDateTime createdAt;
+    private String retailRecordKey;
 }
 

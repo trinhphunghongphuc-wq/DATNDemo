@@ -2,6 +2,7 @@ package com.controller;
 
 import com.dto.product.ProductDetailResponse;
 import com.dto.product.ProductListResponse;
+import com.dto.product.RetailUnitTraceResponse;
 import com.dto.product.TraceabilityResponse;
 import com.service.ProductService;
 import lombok.RequiredArgsConstructor;
@@ -46,5 +47,12 @@ public class ProductController {
             @RequestParam(required = false) String status
     ) {
         return productService.searchAndFilterProducts(keyword, origin, status);
+    }
+
+    @GetMapping("/traceability/retail/{retailCode}")
+    public RetailUnitTraceResponse getRetailUnitTrace(
+            @PathVariable String retailCode
+    ) {
+        return productService.getRetailUnitTrace(retailCode);
     }
 }

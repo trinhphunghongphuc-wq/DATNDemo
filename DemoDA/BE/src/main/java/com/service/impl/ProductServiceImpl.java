@@ -1,14 +1,13 @@
 package com.service.impl;
 
-import com.dto.product.ProductDetailResponse;
-import com.dto.product.ProductListResponse;
-import com.dto.product.TraceabilityResponse;
-import com.dto.product.TraceabilityStepResponse;
+import com.dto.product.*;
 import com.dto.record.RecordItemResponse;
 import com.entity.Batch;
 import com.entity.Record;
+import com.entity.RetailUnit;
 import com.repository.BatchRepository;
 import com.repository.RecordRepository;
+import com.repository.RetailUnitRepository;
 import com.service.JsonExtractService;
 import com.service.ProductService;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +23,7 @@ public class ProductServiceImpl implements ProductService {
     private final BatchRepository batchRepository;
     private final RecordRepository recordRepository;
     private final JsonExtractService jsonExtractService;
+    private final RetailUnitRepository retailUnitRepository;
 
     @Override
     public List<ProductListResponse> getAllProducts() {
@@ -139,6 +139,28 @@ public class ProductServiceImpl implements ProductService {
                         || product.getStatus() != null
                         && product.getStatus().equalsIgnoreCase(status))
                 .toList();
+    }
+
+    @Override
+    public RetailUnitTraceResponse getRetailUnitTrace(String retailCode) {
+        RetailUnit unit = retailUnitRepository.findByRetailCode(retailCode)
+                .orElseThrow(() ->
+                        new IllegalArgumentException("Retail unit not found"));
+
+        Batch batch = unit.getBatch();
+
+        return new RetailUnitTraceResponse(
+                unit.getRetailCode(),
+                unit.getProductName(),
+                unit.getType(),
+                unit.getAllocatedWeight(),
+                unit.getPackageWeight(),
+                unit.getPackageQuantity(),
+                unit.getExpiryDate(),
+                batch.getBatchCode(),
+                batch.getId(),
+                unit.getRetailRecordKey()
+        );
     }
 
     private boolean containsIgnoreCase(String source, String keyword) {
