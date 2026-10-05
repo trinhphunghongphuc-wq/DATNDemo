@@ -1,24 +1,25 @@
 package com.service.impl;
 
 
+
+import com.dto.record.RecordRequest;
+import com.entity.Record;
 import com.dto.user.retailer.CreateRetailUnitRequest;
 import com.dto.user.retailer.RetailUnitResponse;
 import com.entity.Batch;
 import com.entity.RetailUnit;
-import com.enums.BatchStatus;
-import com.enums.RetailUnitStatus;
-import com.enums.RetailUnitType;
+import com.enums.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.repository.BatchRepository;
 import com.repository.RetailUnitRepository;
+import com.service.RecordService;
 import com.service.RetailUnitService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +27,9 @@ public class RetailUnitServiceImpl implements RetailUnitService {
 
     private final BatchRepository batchRepository;
     private final RetailUnitRepository retailUnitRepository;
+
+    private final RecordService recordService;
+    private final ObjectMapper objectMapper;
 
     @Override
     @Transactional
@@ -51,7 +55,7 @@ public class RetailUnitServiceImpl implements RetailUnitService {
         validateRetailUnitRequest(request);
 
         String retailCode = generateRetailCode();
-        String qrContent = "http://localhost:3000/trace/retail/" + retailCode;
+        String qrContent = "/trace/retail/" + retailCode;
 
         RetailUnit retailUnit = RetailUnit.builder()
                 .retailCode(retailCode)
@@ -70,16 +74,40 @@ public class RetailUnitServiceImpl implements RetailUnitService {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        batch.setRemainingWeight(batch.getRemainingWeight() - request.getAllocatedWeight());
+        RetailUnit savedRetailUnit = retailUnitRepository.save(retailUnit);
 
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("eventType", "RETAIL_UNIT_CREATED");
+        event.put("batchId", batch.getId());
+        event.put("retailCode", retailCode);
+        event.put("retailerId", retailerId);
+        event.put("productName", savedRetailUnit.getProductName());
+        event.put("type", savedRetailUnit.getType().name());
+        event.put("allocatedWeightKg", savedRetailUnit.getAllocatedWeight());
+        event.put("packageWeightKg", savedRetailUnit.getPackageWeight());
+        event.put("packageQuantity", savedRetailUnit.getPackageQuantity());
+        event.put("createdAt", savedRetailUnit.getCreatedAt().toString());
+
+        RecordRequest recordRequest = new RecordRequest();
+        recordRequest.setRecordType(RecordType.RETAIL);
+        recordRequest.setRawJson(objectMapper.valueToTree(event).toString());
+        recordRequest.setPrivateData(false);
+
+        Record retailRecord = recordService.createRecordsForBatch(
+                batch, List.of(recordRequest), Role.RETAILER
+        ).get(0);
+
+        savedRetailUnit.setRetailRecordKey(retailRecord.getRecordKey());
+
+        batch.setRemainingWeight(
+                batch.getRemainingWeight() - request.getAllocatedWeight()
+        );
         if (batch.getRemainingWeight() <= 0) {
             batch.setRemainingWeight(0.0);
         }
 
         batchRepository.save(batch);
-
-        RetailUnit savedRetailUnit = retailUnitRepository.save(retailUnit);
-
+        retailUnitRepository.save(savedRetailUnit);
         return toResponse(savedRetailUnit);
     }
 
@@ -191,6 +219,7 @@ public class RetailUnitServiceImpl implements RetailUnitService {
                 .batchName(batch.getName())
                 .batchRemainingWeight(batch.getRemainingWeight())
                 .createdAt(retailUnit.getCreatedAt())
+                .retailRecordKey(retailUnit.getRetailRecordKey())
                 .build();
     }
 }

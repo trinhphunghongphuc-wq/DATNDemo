@@ -8,6 +8,7 @@ import {
 import LoginPage from "../pages/auth/LoginPage";
 import RegisterPage from "../pages/auth/RegisterPage";
 import TraceBatchPage from "../pages/trace/TraceBatchPage";
+import TraceRetailUnitPage from "../pages/trace/TraceRetailUnitPage";
 
 import DashboardLayout from "../layouts/DashboardLayout";
 import BatchQrPage from "../pages/batches/BatchQrPage";
@@ -17,6 +18,7 @@ import ProducerPartnersPage from "../pages/producer/ProducerPartnersPage";
 
 import DistributorBatchesPage from "../pages/distributor/DistributorBatchesPage";
 import DistributorJourneyPage from "../pages/distributor/DistributorJourneyPage";
+import DistributorVehiclesPage from "../pages/distributor/DistributorVehiclesPage";
 
 import CompanyProfilePage from "../pages/company/CompanyProfilePage";
 
@@ -28,9 +30,6 @@ import AdminEvaluationsPage from "../pages/admin/AdminEvaluationsPage";
 
 import RetailerBatchesPage from "../pages/retailer/RetailerBatchesPage";
 import RetailerRecordsPage from "../pages/retailer/RetailerRecordsPage";
-
-import DistributorVehiclesPage from "../pages/distributor/DistributorVehiclesPage";
-
 import RetailUnitsPage from "../pages/retailer/RetailUnitsPage";
 
 function getRole() {
@@ -82,10 +81,14 @@ export default function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
-      {/* Trang công khai mở từ QR */}
+      {/* Trang công khai mở từ QR, không cần đăng nhập */}
       <Route
         path="/trace/batch/:batchCode"
         element={<TraceBatchPage />}
+      />
+      <Route
+        path="/trace/retail/:retailCode"
+        element={<TraceRetailUnitPage />}
       />
 
       {/* Các trang cần đăng nhập */}
@@ -151,9 +154,13 @@ export default function AppRoutes() {
             path="/distributor/batches/:batchId"
             element={<DistributorJourneyPage />}
           />
+          <Route
+            path="/distributor/vehicles"
+            element={<DistributorVehiclesPage />}
+          />
         </Route>
 
-        {/* Distributor và Retailer tự cập nhật hồ sơ công ty */}
+        {/* Distributor và Retailer cập nhật hồ sơ công ty */}
         <Route
           element={
             <RoleRoute
@@ -167,13 +174,25 @@ export default function AppRoutes() {
           />
         </Route>
 
-        <Route path="/retailer/batches" element={<RetailerBatchesPage />} />
-        <Route path="/retailer/batches/:batchId/records" element={<RetailerRecordsPage />} />
-        <Route path="/distributor/vehicles" element={<DistributorVehiclesPage />} />
-        <Route path="/retailer/retail-units" element={<RetailUnitsPage />} />
+        {/* Retailer */}
+        <Route
+          path="/retailer/batches"
+          element={<RetailerBatchesPage />}
+        />
+        <Route
+          path="/retailer/batches/:batchId/records"
+          element={<RetailerRecordsPage />}
+        />
+        <Route
+          path="/retailer/retail-units"
+          element={<RetailUnitsPage />}
+        />
       </Route>
 
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route
+        path="*"
+        element={<Navigate to="/dashboard" replace />}
+      />
     </Routes>
   );
 }
