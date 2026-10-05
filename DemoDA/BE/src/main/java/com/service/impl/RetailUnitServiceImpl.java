@@ -74,7 +74,6 @@ public class RetailUnitServiceImpl implements RetailUnitService {
 
         if (batch.getRemainingWeight() <= 0) {
             batch.setRemainingWeight(0.0);
-            batch.setStatus(BatchStatus.SOLD_OUT);
         }
 
         batchRepository.save(batch);
