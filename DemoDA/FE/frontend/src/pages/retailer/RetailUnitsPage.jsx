@@ -11,6 +11,15 @@ export default function RetailUnitsPage() {
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [page, setPage] = useState(1);
+
+  const pageSize = 8;
+  const totalPages = Math.ceil(units.length / pageSize);
+  const currentPage = Math.min(page, Math.max(totalPages, 1));
+  const visibleUnits = units.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
   useEffect(() => {
     let active = true;
@@ -44,6 +53,8 @@ export default function RetailUnitsPage() {
     link.click();
   }
 
+
+
   return (
     <div className="space-y-5">
       <div>
@@ -59,7 +70,7 @@ export default function RetailUnitsPage() {
         <p>Đang tải...</p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {units.map((unit) => {
+          {visibleUnits.map((unit) => {
             const traceUrl =
               `${publicBaseUrl}/trace/retail/${encodeURIComponent(unit.retailCode)}`;
 

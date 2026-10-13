@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, ShieldCheck } from "lucide-react";
 import axiosClient from "../../api/axiosClient";
+import Pagination from "../../components/common/Pagination";
 
 const STAGES = ["PRODUCER", "DISTRIBUTOR", "RETAILER"];
 
@@ -35,6 +36,9 @@ export default function AdminBatchesPage() {
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
+  const [page, setPage] = useState(1);
+
+
 
   const filteredBatches = useMemo(() => {
     const search = keyword.trim().toLowerCase();
@@ -46,6 +50,15 @@ export default function AdminBatchesPage() {
         String(batch.id).includes(search)
     );
   }, [batches, keyword]);
+
+  const pageSize = 10;
+  const totalPages = Math.ceil(filteredBatches.length / pageSize);
+  const currentPage = Math.min(page, Math.max(totalPages, 1));
+
+  const visibleBatches = filteredBatches.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
   async function loadBatches() {
     setLoading(true);
@@ -192,16 +205,15 @@ export default function AdminBatchesPage() {
                 Không tìm thấy lô hàng.
               </p>
             ) : (
-              filteredBatches.map((batch) => (
+              visibleBatches.map((batch) => (
                 <button
                   key={batch.id}
                   type="button"
                   onClick={() => loadBatchDetail(batch.id)}
-                  className={`mb-1 w-full rounded-xl border p-4 text-left transition-colors ${
-                    selectedId === batch.id
-                      ? "border-blue-500/60 bg-blue-500/10"
-                      : "border-transparent hover:bg-slate-800/70"
-                  }`}
+                  className={`mb-1 w-full rounded-xl border p-4 text-left transition-colors ${selectedId === batch.id
+                    ? "border-blue-500/60 bg-blue-500/10"
+                    : "border-transparent hover:bg-slate-800/70"
+                    }`}
                 >
                   <strong className="block truncate text-sm">
                     {batch.name || `Batch #${batch.id}`}
@@ -285,11 +297,10 @@ export default function AdminBatchesPage() {
                       </div>
 
                       <p
-                        className={`mt-3 text-sm ${
-                          anchor
-                            ? "text-emerald-400"
-                            : "text-amber-400"
-                        }`}
+                        className={`mt-3 text-sm ${anchor
+                          ? "text-emerald-400"
+                          : "text-amber-400"
+                          }`}
                       >
                         {anchor
                           ? "Đã có giao dịch anchor"

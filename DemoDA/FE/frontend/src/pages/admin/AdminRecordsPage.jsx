@@ -1,6 +1,34 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import axiosClient from "../../api/axiosClient";
+import Pagination from "../../components/common/Pagination";
+
+const RECORD_TYPES = [
+  "PRODUCTION",
+  "HARVEST",
+  "PACKAGING",
+  "DELIVERY_REJECTION",
+  "RETURN_RECEIPT",
+  "TRANSPORT",
+  "WAREHOUSE",
+  "RETAIL",
+];
+
+
+const TYPE_BY_PREFIX = {
+  PROD: "PRODUCTION",
+  HARV: "HARVEST",
+  PACK: "PACKAGING",
+  TRAN: "TRANSPORT",
+  WARE: "WAREHOUSE",
+  RETA: "RETAIL",
+};
+
+function getRecordType(record) {
+  if (record.recordType) return record.recordType;
+  const prefix = record.recordKey?.split("-")[0];
+  return TYPE_BY_PREFIX[prefix] ?? null;
+}
 
 const formatDate = (value) =>
   value ? new Date(value).toLocaleString("vi-VN") : "—";
@@ -8,6 +36,8 @@ const formatDate = (value) =>
 export default function AdminRecordsPage() {
   const [records, setRecords] = useState([]);
   const [keyword, setKeyword] = useState("");
+  const [recordType, setRecordType] = useState("");
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -32,15 +62,28 @@ export default function AdminRecordsPage() {
 
   const filtered = useMemo(() => {
     const q = keyword.trim().toLowerCase();
-    if (!q) return records;
 
-    return records.filter(
-      (record) =>
+    return records.filter((record) => {
+      const matchesKeyword =
+        !q ||
         record.recordKey?.toLowerCase().includes(q) ||
         record.batchName?.toLowerCase().includes(q) ||
-        String(record.batchId).includes(q)
-    );
-  }, [records, keyword]);
+        String(record.batchId).includes(q);
+
+      const matchesType =
+        !recordType || getRecordType(record) === recordType;
+
+      return matchesKeyword && matchesType;
+    });
+  }, [records, keyword, recordType]);
+
+  const pageSize = 10;
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const currentPage = Math.min(page, Math.max(totalPages, 1));
+  const visibleRecords = filtered.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
   async function openRecord(recordId) {
     setSelected(null);
@@ -81,14 +124,37 @@ export default function AdminRecordsPage() {
         <section className="overflow-hidden rounded-2xl border border-slate-800 bg-[#111827]">
           <div className="border-b border-slate-800 p-5">
             <h2 className="font-semibold">Danh sách bản ghi</h2>
-            <div className="mt-4 flex items-center gap-2 rounded-xl border border-slate-700 bg-[#0b1020] px-3">
-              <Search size={17} className="text-slate-400" />
-              <input
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
-                placeholder="Tìm record key, tên lô hoặc batch ID"
-                className="w-full bg-transparent py-2.5 text-sm outline-none placeholder:text-slate-500"
-              />
+
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+              <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-700 bg-[#0b1020] px-3">
+                <Search size={17} className="shrink-0 text-slate-400" />
+                <input
+                  value={keyword}
+                  onChange={(event) => {
+                    setKeyword(event.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Tìm record key, tên lô hoặc batch ID"
+                  className="w-full bg-transparent py-2.5 text-sm outline-none placeholder:text-slate-500"
+                />
+              </div>
+
+              <select
+                aria-label="Lọc theo loại bản ghi"
+                value={recordType}
+                onChange={(event) => {
+                  setRecordType(event.target.value);
+                  setPage(1);
+                }}
+                className="rounded-xl border border-slate-700 bg-[#0b1020] px-3 py-2.5 text-sm text-white"
+              >
+                <option value="">Tất cả loại bản ghi</option>
+                {RECORD_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -99,28 +165,37 @@ export default function AdminRecordsPage() {
               Không có bản ghi phù hợp.
             </p>
           ) : (
-            <div className="max-h-[680px] overflow-y-auto">
-              {filtered.map((record) => (
-                <button
-                  key={record.recordId}
-                  type="button"
-                  onClick={() => openRecord(record.recordId)}
-                  className="w-full border-b border-slate-800 px-5 py-4 text-left hover:bg-slate-800/50"
-                >
-                  <strong className="block break-all text-sm text-white">
-                    {record.recordKey}
-                  </strong>
-                  <span className="mt-1 block text-xs text-slate-400">
-                    {record.batchName ?? "Lô không xác định"} · Batch #
-                    {record.batchId ?? "—"}
-                  </span>
-                  <span className="mt-1 block text-xs text-slate-500">
-                    Leaf #{record.leafIndex ?? "—"} ·{" "}
-                    {formatDate(record.createdAt)}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="max-h-[680px] overflow-y-auto">
+                {visibleRecords.map((record) => (
+                  <button
+                    key={record.recordId}
+                    type="button"
+                    onClick={() => openRecord(record.recordId)}
+                    className="w-full border-b border-slate-800 px-5 py-4 text-left hover:bg-slate-800/50"
+                  >
+                    <strong className="block break-all text-sm text-white">
+                      {record.recordKey}
+                    </strong>
+                    <span className="mt-1 block text-xs text-slate-400">
+                      {record.batchName ?? "Lô không xác định"} · Batch #
+                      {record.batchId ?? "—"}
+                    </span>
+                    <span className="mt-1 block text-xs text-slate-500">
+                      {record.recordType ?? "Chưa rõ loại"} · Leaf #
+                      {record.leafIndex ?? "—"} ·{" "}
+                      {formatDate(record.createdAt)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <Pagination
+                page={currentPage}
+                totalPages={totalPages}
+                onPageChange={setPage}
+              />
+            </>
           )}
         </section>
 
@@ -128,7 +203,9 @@ export default function AdminRecordsPage() {
           <h2 className="font-semibold">Chi tiết bản ghi</h2>
 
           {detailLoading ? (
-            <p className="mt-5 text-sm text-slate-400">Đang tải chi tiết...</p>
+            <p className="mt-5 text-sm text-slate-400">
+              Đang tải chi tiết...
+            </p>
           ) : !selected ? (
             <p className="mt-5 text-sm text-slate-400">
               Chọn một bản ghi trong danh sách.
@@ -148,6 +225,10 @@ export default function AdminRecordsPage() {
                   <p className="mt-1">
                     {selected.batchName ?? "—"} (#{selected.batchId ?? "—"})
                   </p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Loại bản ghi</p>
+                  <p className="mt-1">{selected.recordType ?? "—"}</p>
                 </div>
                 <div>
                   <p className="text-slate-400">Leaf index</p>
