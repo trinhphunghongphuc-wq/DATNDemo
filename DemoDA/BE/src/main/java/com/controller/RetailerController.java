@@ -25,6 +25,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
+import com.dto.user.retailer.RetailStorageReadingRequest;
 
 @RestController
 @RequestMapping("/api/retailer")
@@ -178,5 +179,30 @@ public class RetailerController {
         }
 
         return ResponseEntity.ok(Map.of("cid", cid));
+    }
+
+    @PostMapping("/batches/{batchId}/storage-readings")
+    public ResponseEntity<RecordItemResponse> addStorageReading(
+            @PathVariable Long batchId,
+            @Valid @RequestBody RetailStorageReadingRequest request,
+            Authentication authentication
+    ) {
+        Long retailerId = getCurrentUserId(authentication);
+
+        return ResponseEntity.ok(
+                retailerService.addStorageReading(batchId, retailerId, request)
+        );
+    }
+
+    @PostMapping("/retail-units/{retailUnitId}/storage-readings")
+    public ResponseEntity<RecordItemResponse> addRetailUnitStorageReading(
+            @PathVariable Long retailUnitId,
+            @Valid @RequestBody RetailStorageReadingRequest request,
+            Authentication authentication
+    ) {
+        Long retailerId = getCurrentUserId(authentication);
+        return ResponseEntity.ok(
+                retailUnitService.addStorageReading(retailUnitId, retailerId, request)
+        );
     }
 }

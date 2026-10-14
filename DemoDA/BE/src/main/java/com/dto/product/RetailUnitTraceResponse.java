@@ -3,6 +3,7 @@ package com.dto.product;
 import com.enums.RetailUnitType;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 public record RetailUnitTraceResponse(
         String retailCode,
@@ -22,7 +23,7 @@ public record RetailUnitTraceResponse(
         LocalDate harvestDate,
         RecommendedConditions recommendedConditions,
         MeasuredConditions transportConditions,
-        MeasuredConditions retailerStorageConditions
+        RetailStorageConditions retailerStorageConditions
 ) {
     public record RecommendedConditions(
             Double temperatureMin,
@@ -40,5 +41,17 @@ public record RetailUnitTraceResponse(
             String endedAt,
             int sampleCount,
             Integer outOfRangeCount
+    ){}
+    public record RetailStorageConditions(
+            Double temperatureMin,
+            Double temperatureMax,
+            Double humidityMin,
+            Double humidityMax,
+            LocalDateTime measuredFrom,
+            LocalDateTime measuredTo,
+            Integer readingCount,
+            Integer outOfRangeCount,
+            String readingSource
     ) {}
+
 }

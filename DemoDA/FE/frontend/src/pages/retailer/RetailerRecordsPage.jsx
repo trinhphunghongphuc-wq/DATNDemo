@@ -22,6 +22,15 @@ export default function RetailerRecordsPage() {
     note: "",
   });
 
+  const [storageForm, setStorageForm] = useState({
+  location: "",
+  temperature: "",
+  humidity: "",
+  note: "",
+});
+
+const [withInitialStorage, setWithInitialStorage] = useState(false);
+
   const [retailUnits, setRetailUnits] = useState([]);
   const [unitForm, setUnitForm] = useState({
     productName: "",
@@ -81,6 +90,54 @@ export default function RetailerRecordsPage() {
       setBusy(false);
     }
   }
+
+  async function addStorageReading(event) {
+  event.preventDefault();
+
+  const temperature = Number(storageForm.temperature);
+  const humidity = Number(storageForm.humidity);
+
+  if (
+    storageForm.temperature === "" ||
+    storageForm.humidity === "" ||
+    !Number.isFinite(temperature) ||
+    !Number.isFinite(humidity) ||
+    humidity < 0 ||
+    humidity > 100
+  ) {
+    setError("Nhập nhiệt độ hợp lệ và độ ẩm từ 0 đến 100%.");
+    return;
+  }
+
+  setBusy(true);
+  setError("");
+  setNotice("");
+
+  try {
+    await axiosClient.post(
+      `/retailer/batches/${batchId}/storage-readings`,
+      {
+        location: storageForm.location.trim(),
+        temperature,
+        humidity,
+        note: storageForm.note.trim(),
+      }
+    );
+
+    await loadBatch();
+    setStorageForm({
+      location: "",
+      temperature: "",
+      humidity: "",
+      note: "",
+    });
+    setNotice("Đã ghi nhận điều kiện bảo quản tại Retailer.");
+  } catch (err) {
+    setError(errorMessage(err));
+  } finally {
+    setBusy(false);
+  }
+}
 
   async function rejectDelivery(event) {
     event.preventDefault();
@@ -161,65 +218,106 @@ export default function RetailerRecordsPage() {
   }
 
 
-  async function createRetailUnit(event) {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    setNotice("");
+async function createRetailUnit(event) {
+  event.preventDefault();
+  setBusy(true);
+  setError("");
+  setNotice("");
 
-    try {
-      const productName = unitForm.productName.trim();
+  try {
+    const productName = unitForm.productName.trim();
 
-      const payload = unitForm.type === "PACKAGED"
+    const payload =
+      unitForm.type === "PACKAGED"
         ? {
-          productName,
-          type: "PACKAGED",
-          packageWeight: Number(unitForm.packageWeight),
-          packageQuantity: Number(unitForm.packageQuantity),
-          pricePerPackage: Number(unitForm.pricePerPackage),
-          allocatedWeight:
-            Number(unitForm.packageWeight) * Number(unitForm.packageQuantity),
-        }
+            productName,
+            type: "PACKAGED",
+            packageWeight: Number(unitForm.packageWeight),
+            packageQuantity: Number(unitForm.packageQuantity),
+            pricePerPackage: Number(unitForm.pricePerPackage),
+            allocatedWeight:
+              Number(unitForm.packageWeight) *
+              Number(unitForm.packageQuantity),
+          }
         : {
-          productName,
-          type: "BULK",
-          allocatedWeight: Number(unitForm.allocatedWeight),
-          pricePerKg: Number(unitForm.pricePerKg),
-        };
+            productName,
+            type: "BULK",
+            allocatedWeight: Number(unitForm.allocatedWeight),
+            pricePerKg: Number(unitForm.pricePerKg),
+          };
 
-      if (!productName || !Number.isFinite(payload.allocatedWeight)
-        || payload.allocatedWeight <= 0
-        || payload.allocatedWeight > Number(batch?.remainingWeight)) {
-        throw new Error("Tên sản phẩm hoặc khối lượng phân bổ không hợp lệ.");
+    if (
+      !productName ||
+      !Number.isFinite(payload.allocatedWeight) ||
+      payload.allocatedWeight <= 0 ||
+      payload.allocatedWeight > Number(batch?.remainingWeight)
+    ) {
+      throw new Error("Tên sản phẩm hoặc khối lượng phân bổ không hợp lệ.");
+    }
+
+    if (withInitialStorage) {
+      const temperature = Number(storageForm.temperature);
+      const humidity = Number(storageForm.humidity);
+
+      if (
+        !storageForm.location.trim() ||
+        storageForm.temperature === "" ||
+        storageForm.humidity === "" ||
+        !Number.isFinite(temperature) ||
+        !Number.isFinite(humidity) ||
+        humidity < 0 ||
+        humidity > 100
+      ) {
+        throw new Error(
+          "Nhập nơi bảo quản, nhiệt độ và độ ẩm ban đầu hợp lệ."
+        );
       }
 
-      await axiosClient.post(
-        `/retailer/batches/${batchId}/retail-units`,
-        payload
-      );
-
-      const [unitsResponse] = await Promise.all([
-        axiosClient.get(`/retailer/batches/${batchId}/retail-units`),
-        loadBatch(),
-      ]);
-
-      setRetailUnits(unitsResponse.data ?? []);
-      setUnitForm({
-        productName: "",
-        type: "BULK",
-        allocatedWeight: "",
-        pricePerKg: "",
-        packageWeight: "",
-        packageQuantity: "",
-        pricePerPackage: "",
-      });
-      setNotice("Đã tạo đơn vị bán lẻ.");
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
+      payload.initialStorageReading = {
+        location: storageForm.location.trim(),
+        temperature,
+        humidity,
+        note: storageForm.note.trim(),
+      };
     }
+
+    await axiosClient.post(
+      `/retailer/batches/${batchId}/retail-units`,
+      payload
+    );
+
+    const [unitsResponse] = await Promise.all([
+      axiosClient.get(`/retailer/batches/${batchId}/retail-units`),
+      loadBatch(),
+    ]);
+
+    setRetailUnits(unitsResponse.data ?? []);
+
+    setUnitForm({
+      productName: "",
+      type: "BULK",
+      allocatedWeight: "",
+      pricePerKg: "",
+      packageWeight: "",
+      packageQuantity: "",
+      pricePerPackage: "",
+    });
+
+    setWithInitialStorage(false);
+    setStorageForm({
+      location: "",
+      temperature: "",
+      humidity: "",
+      note: "",
+    });
+
+    setNotice("Đã tạo đơn vị bán lẻ.");
+  } catch (err) {
+    setError(errorMessage(err));
+  } finally {
+    setBusy(false);
   }
+}
 
   if (loading) return <p className="text-slate-400">Đang tải lô hàng...</p>;
 
@@ -306,106 +404,259 @@ export default function RetailerRecordsPage() {
         </form>
       )}
 
-      {batch?.status === "AT_RETAIL" && Number(batch.remainingWeight) > 0 && (
-        <form onSubmit={createRetailUnit}
-          className="space-y-3 rounded-xl border border-slate-800 bg-[#111827] p-4">
+
+
+{batch?.status === "AT_RETAIL" &&
+  Number(batch.remainingWeight) > 0 && (
+    <>
+      <form
+        onSubmit={createRetailUnit}
+        className="space-y-4 rounded-xl border border-slate-800 bg-[#111827] p-4"
+      >
+        <div>
           <h2 className="font-semibold">Tạo đơn vị bán lẻ</h2>
-          <p className="text-sm text-slate-400">
+          <p className="mt-1 text-sm text-slate-400">
             Batch còn {batch.remainingWeight} kg chưa phân bổ.
+            Mỗi đơn vị tạo ra có mã QR riêng.
+          </p>
+        </div>
+
+        <input
+          required
+          placeholder="Tên sản phẩm"
+          value={unitForm.productName}
+          onChange={(e) =>
+            setUnitForm((old) => ({
+              ...old,
+              productName: e.target.value,
+            }))
+          }
+          className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
+        />
+
+        <select
+          value={unitForm.type}
+          onChange={(e) =>
+            setUnitForm((old) => ({
+              ...old,
+              type: e.target.value,
+            }))
+          }
+          className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
+        >
+          <option value="BULK">Bán theo kg</option>
+          <option value="PACKAGED">Đóng gói</option>
+        </select>
+
+        {unitForm.type === "BULK" ? (
+          <>
+            <input
+              required
+              type="number"
+              min="0.001"
+              step="any"
+              placeholder="Khối lượng phân bổ (kg)"
+              value={unitForm.allocatedWeight}
+              onChange={(e) =>
+                setUnitForm((old) => ({
+                  ...old,
+                  allocatedWeight: e.target.value,
+                }))
+              }
+              className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
+            />
+            <input
+              required
+              type="number"
+              min="0.01"
+              step="any"
+              placeholder="Giá mỗi kg"
+              value={unitForm.pricePerKg}
+              onChange={(e) =>
+                setUnitForm((old) => ({
+                  ...old,
+                  pricePerKg: e.target.value,
+                }))
+              }
+              className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
+            />
+          </>
+        ) : (
+          <>
+            <input
+              required
+              type="number"
+              min="0.001"
+              step="any"
+              placeholder="Khối lượng mỗi gói (kg)"
+              value={unitForm.packageWeight}
+              onChange={(e) =>
+                setUnitForm((old) => ({
+                  ...old,
+                  packageWeight: e.target.value,
+                }))
+              }
+              className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
+            />
+            <input
+              required
+              type="number"
+              min="1"
+              step="1"
+              placeholder="Số gói"
+              value={unitForm.packageQuantity}
+              onChange={(e) =>
+                setUnitForm((old) => ({
+                  ...old,
+                  packageQuantity: e.target.value,
+                }))
+              }
+              className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
+            />
+            <input
+              required
+              type="number"
+              min="0.01"
+              step="any"
+              placeholder="Giá mỗi gói"
+              value={unitForm.pricePerPackage}
+              onChange={(e) =>
+                setUnitForm((old) => ({
+                  ...old,
+                  pricePerPackage: e.target.value,
+                }))
+              }
+              className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
+            />
+            <p className="text-sm text-slate-400">
+              Sẽ phân bổ:{" "}
+              {Number(unitForm.packageWeight || 0) *
+                Number(unitForm.packageQuantity || 0)}{" "}
+              kg
+            </p>
+          </>
+        )}
+
+        <div className="rounded-xl border border-slate-700 bg-[#0b1020] p-4">
+          <label className="flex items-center gap-2 font-medium">
+            <input
+              type="checkbox"
+              checked={withInitialStorage}
+              onChange={(e) => setWithInitialStorage(e.target.checked)}
+            />
+            Ghi số đo bảo quản ban đầu cho đơn vị này
+          </label>
+          <p className="mt-1 text-xs text-slate-400">
+            Tùy chọn. Chỉ nhập số đo thực tế tại nơi giữ đơn vị bán lẻ
+            này. Bạn có thể ghi thêm các lần đo sau ở trang QR của nó.
           </p>
 
-          <input required placeholder="Tên sản phẩm"
-            value={unitForm.productName}
-            onChange={(e) => setUnitForm((old) => ({
-              ...old, productName: e.target.value
-            }))}
-            className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
-          />
+          {withInitialStorage && (
+            <div className="mt-4 space-y-3">
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="text-sm">
+                  Nơi bảo quản
+                  <input
+                    required
+                    value={storageForm.location}
+                    onChange={(e) =>
+                      setStorageForm((old) => ({
+                        ...old,
+                        location: e.target.value,
+                      }))
+                    }
+                    placeholder="Ví dụ: Tủ mát khu A"
+                    className="mt-1 w-full rounded-lg border border-slate-600 bg-[#111827] p-2"
+                  />
+                </label>
 
-          <select value={unitForm.type}
-            onChange={(e) => setUnitForm((old) => ({
-              ...old, type: e.target.value
-            }))}
-            className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2">
-            <option value="BULK">Bán theo kg</option>
-            <option value="PACKAGED">Đóng gói</option>
-          </select>
+                <label className="text-sm">
+                  Nhiệt độ (°C)
+                  <input
+                    required
+                    type="number"
+                    step="any"
+                    value={storageForm.temperature}
+                    onChange={(e) =>
+                      setStorageForm((old) => ({
+                        ...old,
+                        temperature: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-slate-600 bg-[#111827] p-2"
+                  />
+                </label>
 
-          {unitForm.type === "BULK" ? (
-            <>
-              <input required type="number" min="0.001" step="any"
-                placeholder="Khối lượng phân bổ (kg)"
-                value={unitForm.allocatedWeight}
-                onChange={(e) => setUnitForm((old) => ({
-                  ...old, allocatedWeight: e.target.value
-                }))}
-                className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
-              />
-              <input required type="number" min="0.01" step="any"
-                placeholder="Giá mỗi kg"
-                value={unitForm.pricePerKg}
-                onChange={(e) => setUnitForm((old) => ({
-                  ...old, pricePerKg: e.target.value
-                }))}
-                className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
-              />
-            </>
-          ) : (
-            <>
-              <input required type="number" min="0.001" step="any"
-                placeholder="Khối lượng mỗi gói (kg)"
-                value={unitForm.packageWeight}
-                onChange={(e) => setUnitForm((old) => ({
-                  ...old, packageWeight: e.target.value
-                }))}
-                className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
-              />
-              <input required type="number" min="1" step="1"
-                placeholder="Số gói"
-                value={unitForm.packageQuantity}
-                onChange={(e) => setUnitForm((old) => ({
-                  ...old, packageQuantity: e.target.value
-                }))}
-                className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
-              />
-              <input required type="number" min="0.01" step="any"
-                placeholder="Giá mỗi gói"
-                value={unitForm.pricePerPackage}
-                onChange={(e) => setUnitForm((old) => ({
-                  ...old, pricePerPackage: e.target.value
-                }))}
-                className="w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
-              />
-              <p className="text-sm text-slate-400">
-                Sẽ phân bổ: {
-                  Number(unitForm.packageWeight || 0) *
-                  Number(unitForm.packageQuantity || 0)
-                } kg
-              </p>
-            </>
+                <label className="text-sm">
+                  Độ ẩm (%)
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="any"
+                    value={storageForm.humidity}
+                    onChange={(e) =>
+                      setStorageForm((old) => ({
+                        ...old,
+                        humidity: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-slate-600 bg-[#111827] p-2"
+                  />
+                </label>
+              </div>
+
+              <label className="block text-sm">
+                Ghi chú
+                <textarea
+                  rows={2}
+                  value={storageForm.note}
+                  onChange={(e) =>
+                    setStorageForm((old) => ({
+                      ...old,
+                      note: e.target.value,
+                    }))
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-[#111827] p-2"
+                />
+              </label>
+            </div>
           )}
+        </div>
 
-          <div className="rounded-xl border border-slate-800 bg-[#111827] p-4">
-            <h2 className="font-semibold">Đơn vị bán lẻ đã tạo</h2>
-            <ul className="mt-3 space-y-2 text-sm">
-              {retailUnits.map((unit) => (
-                <li key={unit.id} className="rounded-lg border border-slate-700 p-3">
-                  {unit.productName} · {unit.retailCode} ·
-                  {" "}{unit.type === "PACKAGED"
-                    ? `${unit.packageQuantity} gói × ${unit.packageWeight} kg`
-                    : `${unit.allocatedWeight} kg`}
-                  {" "}· {unit.status}
-                </li>
-              ))}
-            </ul>
-          </div>
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold disabled:opacity-40"
+        >
+          {busy ? "Đang tạo..." : "Tạo đơn vị bán lẻ"}
+        </button>
+      </form>
 
-          <button type="submit" disabled={busy}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold disabled:opacity-40">
-            {busy ? "Đang tạo..." : "Tạo đơn vị bán lẻ"}
-          </button>
-        </form>
-      )}
+      <div className="rounded-xl border border-slate-800 bg-[#111827] p-4">
+        <h2 className="font-semibold">Đơn vị bán lẻ đã tạo</h2>
+        {retailUnits.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-400">Chưa có đơn vị nào.</p>
+        ) : (
+          <ul className="mt-3 space-y-2 text-sm">
+            {retailUnits.map((unit) => (
+              <li
+                key={unit.id}
+                className="rounded-lg border border-slate-700 p-3"
+              >
+                {unit.productName} · {unit.retailCode} ·{" "}
+                {unit.type === "PACKAGED"
+                  ? `${unit.packageQuantity} gói × ${unit.packageWeight} kg`
+                  : `${unit.allocatedWeight} kg`}{" "}
+                · {unit.status}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
+  )}
 
       {batch?.status !== "DELIVERED_TO_RETAILER" && batch?.status !== "AT_RETAIL" && (
         <p className="rounded-xl border border-slate-800 bg-[#111827] p-4 text-sm text-slate-400">

@@ -23,9 +23,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -209,7 +211,83 @@ public class ProductServiceImpl implements ProductService {
                 parseDate(text(harvest, "harvestDate")),
                 recommended,
                 summarizeTransport(batch, records, category),
-                null // Chưa có record cảm biến bảo quản tại Retailer.
+                summarizeRetailStorage(batch, records, unit, category)
+        );
+    }
+
+    private RetailUnitTraceResponse.RetailStorageConditions summarizeRetailStorage(
+            Batch batch,
+            List<Record> records,
+            RetailUnit unit,
+            ProductCategory category
+    ) {
+        List<Double> temperatures = new ArrayList<>();
+        List<Double> humidities = new ArrayList<>();
+        List<LocalDateTime> measuredTimes = new ArrayList<>();
+        int outOfRangeCount = 0;
+
+        for (Record record : records) {
+            if (record.getRecordType() != RecordType.RETAIL) {
+                continue;
+            }
+
+            JsonNode data = readRecordData(batch, record);
+            if (data == null || data.isNull()) {
+                continue;
+            }
+
+            if (!"RETAIL_STORAGE_READING".equals(text(data, "eventType"))
+                    || !unit.getRetailCode().equals(text(data, "retailCode"))) {
+                continue;
+            }
+
+            JsonNode temperatureNode = data.get("temperature");
+            JsonNode humidityNode = data.get("humidity");
+
+            if (temperatureNode == null || !temperatureNode.isNumber()
+                    || humidityNode == null || !humidityNode.isNumber()) {
+                continue;
+            }
+
+            double temperature = temperatureNode.asDouble();
+            double humidity = humidityNode.asDouble();
+
+            temperatures.add(temperature);
+            humidities.add(humidity);
+
+            // Thời điểm record được BE ghi nhận, không lấy giờ tự nhập từ FE.
+            if (record.getCreatedAt() != null) {
+                measuredTimes.add(record.getCreatedAt());
+            }
+
+            if (category != null && (
+                    category.getTemperatureMin() != null
+                            && temperature < category.getTemperatureMin()
+                            || category.getTemperatureMax() != null
+                            && temperature > category.getTemperatureMax()
+                            || category.getHumidityMin() != null
+                            && humidity < category.getHumidityMin()
+                            || category.getHumidityMax() != null
+                            && humidity > category.getHumidityMax()
+            )) {
+                outOfRangeCount++;
+            }
+        }
+
+        if (temperatures.isEmpty()) {
+            return null;
+        }
+
+        return new RetailUnitTraceResponse.RetailStorageConditions(
+                temperatures.stream().mapToDouble(Double::doubleValue).min().orElseThrow(),
+                temperatures.stream().mapToDouble(Double::doubleValue).max().orElseThrow(),
+                humidities.stream().mapToDouble(Double::doubleValue).min().orElseThrow(),
+                humidities.stream().mapToDouble(Double::doubleValue).max().orElseThrow(),
+                measuredTimes.stream().min(LocalDateTime::compareTo).orElse(null),
+                measuredTimes.stream().max(LocalDateTime::compareTo).orElse(null),
+                temperatures.size(),
+                outOfRangeCount,
+                "MANUAL_ENTRY"
         );
     }
 

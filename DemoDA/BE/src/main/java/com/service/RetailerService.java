@@ -6,7 +6,7 @@ import com.dto.record.RecordItemResponse;
 import com.dto.record.RecordRequest;
 import com.dto.user.producer.RejectDeliveryRequest;
 import com.dto.verify.VerifyAllResponse;
-
+import com.dto.user.retailer.RetailStorageReadingRequest;
 import java.util.List;
 import java.util.Map;
 
@@ -29,4 +29,11 @@ public interface RetailerService {
     AdminBatchListResponse confirmDelivery(Long batchId, Long retailerId);
 
     AdminBatchListResponse rejectDelivery(Long batchId, Long retailerId, RejectDeliveryRequest request);
+
+    RecordItemResponse addStorageReading(
+            Long batchId,
+            Long retailerId,
+            RetailStorageReadingRequest request
+    );
+
 }

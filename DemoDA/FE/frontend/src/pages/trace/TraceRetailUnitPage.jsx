@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 const API_BASE = (
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api"
@@ -26,6 +26,10 @@ async function getJson(url, token = null) {
 
   return data;
 }
+
+
+
+
 
 function formatDate(value) {
   if (!value) return "Chưa có dữ liệu";
@@ -67,6 +71,8 @@ function Info({ label, value }) {
   );
 }
 
+
+
 function MeasuredConditions({ title, conditions, emptyMessage }) {
   return (
     <section className="rounded-2xl bg-white p-6 shadow">
@@ -103,8 +109,8 @@ function MeasuredConditions({ title, conditions, emptyMessage }) {
               value={
                 conditions.startedAt && conditions.endedAt
                   ? `${formatDateTime(conditions.startedAt)} – ${formatDateTime(
-                      conditions.endedAt
-                    )}`
+                    conditions.endedAt
+                  )}`
                   : "Chưa có thời gian đo"
               }
             />
@@ -129,7 +135,7 @@ function MeasuredConditions({ title, conditions, emptyMessage }) {
 export default function TraceRetailUnitPage() {
   const { retailCode } = useParams();
   const canVerify = isRetailerLoggedIn();
-
+  const navigate = useNavigate();
   const [unit, setUnit] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -181,8 +187,8 @@ export default function TraceRetailUnitPage() {
     try {
       const result = await getJson(
         `${API_BASE}/verify/batches/${unit.batchId}` +
-          `/records/${encodeURIComponent(unit.retailRecordKey)}` +
-          `/verify-on-chain`,
+        `/records/${encodeURIComponent(unit.retailRecordKey)}` +
+        `/verify-on-chain`,
         token
       );
 
@@ -191,6 +197,17 @@ export default function TraceRetailUnitPage() {
       setVerifyError(err.message);
     } finally {
       setVerifying(false);
+    }
+  }
+
+  function goBack() {
+    const role = (localStorage.getItem("role") || "").replace(/^ROLE_/, "");
+    const isRetailer = role === "RETAILER" && !!localStorage.getItem("token");
+
+    if (isRetailer) {
+      navigate("/retailer/retail-units");
+    } else {
+      navigate(-1);
     }
   }
 
@@ -223,6 +240,13 @@ export default function TraceRetailUnitPage() {
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-8 text-slate-800">
       <div className="mx-auto max-w-3xl space-y-5">
+        <button
+          type="button"
+          onClick={goBack}
+          className="mb-4 inline-flex items-center text-sm font-semibold text-emerald-700 hover:underline"
+        >
+          ← Quay lại
+        </button>
         <header className="rounded-2xl bg-emerald-700 p-7 text-white shadow">
           <p className="text-sm text-emerald-100">
             TRUY XUẤT NGUỒN GỐC
@@ -367,11 +391,10 @@ export default function TraceRetailUnitPage() {
 
                 {verification && (
                   <div
-                    className={`mt-4 rounded-lg p-4 ${
-                      verification.valid
+                    className={`mt-4 rounded-lg p-4 ${verification.valid
                         ? "bg-emerald-50 text-emerald-800"
                         : "bg-red-50 text-red-800"
-                    }`}
+                      }`}
                   >
                     <p className="font-bold">
                       {verification.valid
