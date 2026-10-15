@@ -205,4 +205,15 @@ public class RetailerController {
                 retailUnitService.addStorageReading(retailUnitId, retailerId, request)
         );
     }
+
+    @PostMapping("/batches/{batchId}/close-recording")
+    public ResponseEntity<Map<String, Object>> closeRecording(
+            @PathVariable Long batchId,
+            Authentication authentication
+    ) {
+        Long retailerId = getCurrentUserId(authentication);
+        return ResponseEntity.ok(
+                retailerService.closeRecording(batchId, retailerId)
+        );
+    }
 }

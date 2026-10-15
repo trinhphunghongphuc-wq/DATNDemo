@@ -37,7 +37,7 @@ export default function RetailUnitsPage() {
     (currentPage - 1) * pageSize,
     currentPage * pageSize
   );
-  
+
 
   useEffect(() => {
     let active = true;
@@ -51,7 +51,7 @@ export default function RetailUnitsPage() {
         if (active) {
           setError(
             err.response?.data?.message ??
-              "Không tải được đơn vị bán lẻ."
+            "Không tải được đơn vị bán lẻ."
           );
         }
       })
@@ -83,6 +83,11 @@ export default function RetailUnitsPage() {
 
   async function saveReading(event, unit) {
     event.preventDefault();
+    if (unit.retailerRecordingClosed) {
+      setError("Batch đã hoàn tất ghi nhận; không thể thêm số đo.");
+      setEditingUnitId(null);
+      return;
+    }
     setError("");
     setNotice("");
 
@@ -216,7 +221,12 @@ export default function RetailUnitsPage() {
                   </div>
 
                   <div className="mt-5 border-t border-slate-700 pt-4">
-                    {editingUnitId !== unit.id ? (
+                    {unit.retailerRecordingClosed ? (
+                      <p className="text-sm text-emerald-300">
+                        Đã hoàn tất ghi nhận Retailer. Không thể thêm số đo cho
+                        lô tách bán này.
+                      </p>
+                    ) : editingUnitId !== unit.id ? (
                       <button
                         type="button"
                         onClick={() => openReadingForm(unit.id)}

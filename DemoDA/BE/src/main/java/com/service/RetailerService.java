@@ -36,4 +36,6 @@ public interface RetailerService {
             RetailStorageReadingRequest request
     );
 
+    Map<String, Object> closeRecording(Long batchId, Long retailerId);
+
 }

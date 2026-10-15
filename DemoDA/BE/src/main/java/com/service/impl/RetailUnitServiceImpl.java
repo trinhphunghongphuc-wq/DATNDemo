@@ -47,23 +47,33 @@ public class RetailUnitServiceImpl implements RetailUnitService {
     ) {
         Batch batch = getBatchForRetailer(batchId, retailerId);
 
+        if (batch.isRetailerRecordingClosed()) {
+            throw new IllegalStateException(
+                    "Retailer recording is closed; cannot create a retail unit"
+            );
+        }
+
         if (batch.getStatus() != BatchStatus.AT_RETAIL) {
             throw new RuntimeException("Batch is not at retail yet");
         }
 
         if (batch.getRemainingWeight() == null) {
-            throw new RuntimeException("Batch remaining weight is not initialized");
+            throw new RuntimeException(
+                    "Batch remaining weight is not initialized"
+            );
         }
 
         if (request.getAllocatedWeight() == null
                 || request.getAllocatedWeight() <= 0) {
             throw new RuntimeException(
-                    "Allocated weight must be greater than 0");
+                    "Allocated weight must be greater than 0"
+            );
         }
 
         if (batch.getRemainingWeight() < request.getAllocatedWeight()) {
             throw new RuntimeException(
-                    "Not enough remaining weight in batch");
+                    "Not enough remaining weight in batch"
+            );
         }
 
         validateRetailUnitRequest(request);
@@ -104,7 +114,9 @@ public class RetailUnitServiceImpl implements RetailUnitService {
 
         RecordRequest recordRequest = new RecordRequest();
         recordRequest.setRecordType(RecordType.RETAIL);
-        recordRequest.setRawJson(objectMapper.valueToTree(event).toString());
+        recordRequest.setRawJson(
+                objectMapper.valueToTree(event).toString()
+        );
         recordRequest.setPrivateData(false);
 
         Record retailRecord = recordService.createRecordsForBatch(
@@ -115,7 +127,6 @@ public class RetailUnitServiceImpl implements RetailUnitService {
 
         savedRetailUnit.setRetailRecordKey(retailRecord.getRecordKey());
 
-        // Số đo đầu tiên thuộc đúng unit vừa tạo, không thuộc chung cả batch.
         if (request.getInitialStorageReading() != null) {
             addStorageReading(
                     savedRetailUnit.getId(),
@@ -180,15 +191,30 @@ public class RetailUnitServiceImpl implements RetailUnitService {
             RetailStorageReadingRequest request
     ) {
         RetailUnit unit = retailUnitRepository.findById(retailUnitId)
-                .orElseThrow(() ->
-                        new IllegalArgumentException("Retail unit not found: " + retailUnitId));
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Retail unit not found: " + retailUnitId
+                ));
 
         if (!Objects.equals(unit.getRetailerId(), retailerId)) {
             throw new IllegalArgumentException(
-                    "Retail unit does not belong to this retailer");
+                    "Retail unit does not belong to this retailer"
+            );
         }
 
         Batch batch = unit.getBatch();
+
+        if (batch.isRetailerRecordingClosed()) {
+            throw new IllegalStateException(
+                    "Retailer recording is closed; "
+                            + "cannot add a storage reading"
+            );
+        }
+
+        if (batch.getStatus() != BatchStatus.AT_RETAIL) {
+            throw new IllegalStateException(
+                    "Batch is not at Retailer"
+            );
+        }
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("eventType", "RETAIL_STORAGE_READING");
@@ -199,13 +225,14 @@ public class RetailUnitServiceImpl implements RetailUnitService {
         data.put("humidity", request.humidity());
         data.put("note", request.note());
         data.put("readingSource", "MANUAL_ENTRY");
-        // Thời điểm ghi nhận đã có trong record.createdAt do BE tạo.
 
         String rawJson;
         try {
             rawJson = objectMapper.writeValueAsString(data);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Cannot serialize storage reading", e);
+            throw new IllegalStateException(
+                    "Cannot serialize storage reading", e
+            );
         }
 
         RecordRequest recordRequest = new RecordRequest();
@@ -213,20 +240,20 @@ public class RetailUnitServiceImpl implements RetailUnitService {
         recordRequest.setRawJson(rawJson);
         recordRequest.setPrivateData(true);
 
-        com.entity.Record saved = recordService.createRecordsForBatch(
+        Record savedRecord = recordService.createRecordsForBatch(
                 batch,
                 List.of(recordRequest),
                 Role.RETAILER
         ).get(0);
 
         return RecordItemResponse.builder()
-                .recordId(saved.getId())
-                .recordKey(saved.getRecordKey())
-                .recordType(saved.getRecordType())
-                .rawJson(saved.getRawJson())
-                .leafHash(saved.getLeafHash())
-                .leafIndex(saved.getLeafIndex())
-                .createdAt(saved.getCreatedAt())
+                .recordId(savedRecord.getId())
+                .recordKey(savedRecord.getRecordKey())
+                .recordType(savedRecord.getRecordType())
+                .rawJson(savedRecord.getRawJson())
+                .leafHash(savedRecord.getLeafHash())
+                .leafIndex(savedRecord.getLeafIndex())
+                .createdAt(savedRecord.getCreatedAt())
                 .build();
     }
 
@@ -304,6 +331,9 @@ public class RetailUnitServiceImpl implements RetailUnitService {
                 .batchRemainingWeight(batch.getRemainingWeight())
                 .createdAt(retailUnit.getCreatedAt())
                 .retailRecordKey(retailUnit.getRetailRecordKey())
+                .retailerRecordingClosed(
+                        retailUnit.getBatch().isRetailerRecordingClosed()
+                )
                 .build();
     }
 }

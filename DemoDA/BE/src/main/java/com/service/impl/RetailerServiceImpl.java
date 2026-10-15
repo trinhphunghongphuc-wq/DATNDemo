@@ -10,9 +10,13 @@ import com.dto.verify.VerifyAllResponse;
 import com.entity.Batch;
 import com.entity.Record;
 import com.enums.BatchStatus;
+import com.enums.RecordStage;
 import com.enums.RecordType;
 import com.enums.Role;
 import com.repository.BatchRepository;
+import com.repository.RecordRepository;
+import com.repository.RetailUnitRepository;
+import com.repository.StageAnchorTransactionRepository;
 import com.service.RecordService;
 import com.service.RetailerService;
 import com.service.VerifyService;
@@ -20,7 +24,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.dto.user.retailer.RetailStorageReadingRequest;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
 import java.time.LocalDate;
@@ -33,7 +36,7 @@ import java.util.Objects;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -44,6 +47,10 @@ public class RetailerServiceImpl implements RetailerService {
     private final RecordService recordService;
     private final VerifyService verifyService;
     private final ObjectMapper objectMapper;
+
+    private final RetailUnitRepository retailUnitRepository;
+    private final RecordRepository recordRepository;
+    private final StageAnchorTransactionRepository stageAnchorTransactionRepository;
 
 
     @Override
@@ -281,6 +288,50 @@ public class RetailerServiceImpl implements RetailerService {
         }
     }
 
+    @Override
+    @Transactional
+    public Map<String, Object> closeRecording(Long batchId, Long retailerId) {
+        Batch batch = getBatchForRetailer(batchId, retailerId);
+
+        if (batch.getStatus() != BatchStatus.AT_RETAIL) {
+            throw new IllegalStateException(
+                    "Only a batch at Retailer can be closed");
+        }
+
+        if (stageAnchorTransactionRepository
+                .existsByBatch_IdAndRecordStage(batchId, RecordStage.RETAILER)) {
+            throw new IllegalStateException(
+                    "Retailer stage has already been anchored");
+        }
+
+        if (retailUnitRepository
+                .findByBatchIdAndRetailerId(batchId, retailerId).isEmpty()) {
+            throw new IllegalStateException(
+                    "Create at least one retail unit before closing");
+        }
+
+        if (recordRepository.countByBatchIdAndRecordStage(
+                batchId, RecordStage.RETAILER) == 0) {
+            throw new IllegalStateException(
+                    "Retailer stage has no records");
+        }
+
+        if (batch.getRetailerMerkleRoot() == null
+                || batch.getRetailerMerkleRoot().isBlank()) {
+            throw new IllegalStateException(
+                    "Retailer Merkle root has not been generated");
+        }
+
+        batch.setRetailerRecordingClosed(true);
+        batchRepository.save(batch);
+
+        return Map.of(
+                "batchId", batchId,
+                "retailerRecordingClosed", true,
+                "retailerMerkleRoot", batch.getRetailerMerkleRoot()
+        );
+    }
+
 
     private AdminBatchListResponse toBatchListResponse(Batch batch) {
         return AdminBatchListResponse.builder()
@@ -306,6 +357,7 @@ public class RetailerServiceImpl implements RetailerService {
                 .anchorStatus(batch.getAnchorStatus())
                 .createdAt(batch.getCreatedAt())
                 .remainingWeight(batch.getRemainingWeight())
+                .retailerRecordingClosed(batch.isRetailerRecordingClosed())
                 .records(
                         batch.getRecords()
                                 .stream()

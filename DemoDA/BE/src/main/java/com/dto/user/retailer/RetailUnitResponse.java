@@ -51,5 +51,7 @@ public class RetailUnitResponse {
 
     private LocalDateTime createdAt;
     private String retailRecordKey;
+
+    private boolean retailerRecordingClosed;
 }
 
