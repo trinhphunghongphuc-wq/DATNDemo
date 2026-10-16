@@ -94,6 +94,13 @@ public class EvaluationResult {
     )
     private Integer repetitions = 1;
 
+    /**
+     * null: kết quả trung bình của mô hình trong run.
+     * 1..N: kết quả của từng lần đo.
+     */
+    @Column(name = "sample_index")
+    private Integer sampleIndex;
+
     @PrePersist
     public void prePersist() {
         if (createdAt == null) {

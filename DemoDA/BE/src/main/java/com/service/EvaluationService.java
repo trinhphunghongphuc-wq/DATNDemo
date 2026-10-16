@@ -28,4 +28,6 @@ public interface EvaluationService {
             BigDecimal l2GasPriceGwei,
             BigDecimal ethPriceUsd
     );
+
+    List<EvaluationResult> getSamplesByRunId(String runId);
 }

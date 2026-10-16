@@ -71,132 +71,99 @@ public class EvaluationServiceImpl implements EvaluationService {
 
         String runId = UUID.randomUUID().toString();
 
-        /*
-         * Cùng một bộ dữ liệu và salt được sử dụng cho các chiến lược
-         * nhằm đảm bảo phép so sánh công bằng.
-         */
-        List<String> rawRecords =
-                generateSampleRecords(recordCount);
-
-        List<String> salts =
-                generateSalts(recordCount);
+        // Cùng dữ liệu và salt cho cả ba mô hình trong một run.
+        List<String> rawRecords = generateSampleRecords(recordCount);
+        List<String> salts = generateSalts(recordCount);
 
         long offChainBytes = rawRecords.stream()
                 .mapToLong(value ->
-                        value.getBytes(
-                                StandardCharsets.UTF_8
-                        ).length
+                        value.getBytes(StandardCharsets.UTF_8).length
                 )
                 .sum();
 
-        /*
-         * Warm-up chỉ thực hiện tính toán local.
-         * Không gửi transaction và không lưu kết quả.
-         */
+        // Warm-up chỉ tính toán local, không gửi transaction.
         warmUp(rawRecords, salts);
 
-        List<EvaluationResult> fullOnChainMeasurements =
-                new ArrayList<>();
-
-        List<EvaluationResult> hashMeasurements =
-                new ArrayList<>();
-
-        List<EvaluationResult> merkleMeasurements =
-                new ArrayList<>();
+        List<EvaluationResult> fullMeasurements = new ArrayList<>();
+        List<EvaluationResult> hashMeasurements = new ArrayList<>();
+        List<EvaluationResult> merkleMeasurements = new ArrayList<>();
+        List<EvaluationResult> allSamples = new ArrayList<>();
 
         try {
-            for (int iteration = 0;
-                 iteration < repetitions;
-                 iteration++) {
+            for (int iteration = 0; iteration < repetitions; iteration++) {
+                int sampleIndex = iteration + 1;
 
-                /*
-                 * Luân phiên Hash và Merkle để tránh một chiến lược
-                 * luôn được chạy trước chiến lược còn lại.
-                 */
+                EvaluationResult hashResult;
+                EvaluationResult merkleResult;
+
+                // Luân phiên thứ tự hai mô hình để giảm thiên lệch thứ tự chạy.
                 if (iteration % 2 == 0) {
-                    hashMeasurements.add(
-                            evaluateHashPerRecord(
-                                    runId,
-                                    rawRecords,
-                                    salts,
-                                    offChainBytes
-                            )
+                    hashResult = evaluateHashPerRecord(
+                            runId, rawRecords, salts, offChainBytes
                     );
-
-                    merkleMeasurements.add(
-                            evaluateMerkleBatching(
-                                    runId,
-                                    rawRecords,
-                                    salts,
-                                    offChainBytes
-                            )
+                    merkleResult = evaluateMerkleBatching(
+                            runId, rawRecords, salts, offChainBytes
                     );
                 } else {
-                    merkleMeasurements.add(
-                            evaluateMerkleBatching(
-                                    runId,
-                                    rawRecords,
-                                    salts,
-                                    offChainBytes
-                            )
+                    merkleResult = evaluateMerkleBatching(
+                            runId, rawRecords, salts, offChainBytes
                     );
-
-                    hashMeasurements.add(
-                            evaluateHashPerRecord(
-                                    runId,
-                                    rawRecords,
-                                    salts,
-                                    offChainBytes
-                            )
+                    hashResult = evaluateHashPerRecord(
+                            runId, rawRecords, salts, offChainBytes
                     );
                 }
 
-                /*
-                 * Full on-chain chỉ là baseline đánh giá chi phí.
-                 * Không tham gia phép đo thời gian hash/Merkle.
-                 */
-                fullOnChainMeasurements.add(
-                        evaluateFullOnChain(
-                                runId,
-                                rawRecords
-                        )
+                EvaluationResult fullResult = evaluateFullOnChain(
+                        runId, rawRecords
                 );
+
+                hashResult.setSampleIndex(sampleIndex);
+                merkleResult.setSampleIndex(sampleIndex);
+                fullResult.setSampleIndex(sampleIndex);
+
+                hashMeasurements.add(hashResult);
+                merkleMeasurements.add(merkleResult);
+                fullMeasurements.add(fullResult);
+
+                allSamples.add(hashResult);
+                allSamples.add(merkleResult);
+                allSamples.add(fullResult);
             }
 
-            EvaluationResult fullOnChainAverage =
-                    averageMeasurements(
-                            runId,
-                            EvaluationModel.FULL_ON_CHAIN,
-                            fullOnChainMeasurements,
-                            repetitions
-                    );
-
-            EvaluationResult hashAverage =
-                    averageMeasurements(
-                            runId,
-                            EvaluationModel.HASH_PER_RECORD,
-                            hashMeasurements,
-                            repetitions
-                    );
-
-            EvaluationResult merkleAverage =
-                    averageMeasurements(
-                            runId,
-                            EvaluationModel.MERKLE_BATCHING,
-                            merkleMeasurements,
-                            repetitions
-                    );
-
-            return evaluationResultRepository.saveAll(
-                    List.of(
-                            fullOnChainAverage,
-                            hashAverage,
-                            merkleAverage
-                    )
+            EvaluationResult fullAverage = averageMeasurements(
+                    runId,
+                    EvaluationModel.FULL_ON_CHAIN,
+                    fullMeasurements,
+                    repetitions
             );
+
+            EvaluationResult hashAverage = averageMeasurements(
+                    runId,
+                    EvaluationModel.HASH_PER_RECORD,
+                    hashMeasurements,
+                    repetitions
+            );
+
+            EvaluationResult merkleAverage = averageMeasurements(
+                    runId,
+                    EvaluationModel.MERKLE_BATCHING,
+                    merkleMeasurements,
+                    repetitions
+            );
+
+            // sampleIndex của ba dòng trung bình giữ null.
+            allSamples.add(fullAverage);
+            allSamples.add(hashAverage);
+            allSamples.add(merkleAverage);
+
+            evaluationResultRepository.saveAll(allSamples);
+
+            // Giữ response cũ: FE vẫn nhận đúng ba dòng trung bình.
+            return List.of(fullAverage, hashAverage, merkleAverage);
         } catch (Exception exception) {
             throw new RuntimeException(
-                    "Cannot run blockchain evaluation",
+                    "Cannot run blockchain evaluation: "
+                            + exception.getMessage(),
                     exception
             );
         }
@@ -648,19 +615,15 @@ public class EvaluationServiceImpl implements EvaluationService {
     }
 
     @Override
-    public List<EvaluationResult> getResultsByRunId(
-            String runId
-    ) {
+    public List<EvaluationResult> getResultsByRunId(String runId) {
         return evaluationResultRepository
-                .findByRunIdOrderByEvaluationModelAsc(
-                        runId
-                );
+                .findByRunIdAndSampleIndexIsNullOrderByEvaluationModelAsc(runId);
     }
 
     @Override
     public List<EvaluationResult> getAllResults() {
         return evaluationResultRepository
-                .findAllByOrderByCreatedAtDesc();
+                .findAllBySampleIndexIsNullOrderByCreatedAtDesc();
     }
 
     @Override
@@ -742,9 +705,7 @@ public class EvaluationServiceImpl implements EvaluationService {
 
         List<EvaluationResult> results =
                 evaluationResultRepository
-                        .findByRunIdOrderByEvaluationModelAsc(
-                                runId
-                        );
+                        .findByRunIdAndSampleIndexIsNullOrderByEvaluationModelAsc(runId);
 
         if (results.isEmpty()) {
             throw new IllegalArgumentException(
@@ -763,6 +724,15 @@ public class EvaluationServiceImpl implements EvaluationService {
                 )
                 .toList();
     }
+
+    @Override
+    public List<EvaluationResult> getSamplesByRunId(String runId) {
+        return evaluationResultRepository
+                .findByRunIdAndSampleIndexIsNotNullOrderBySampleIndexAscEvaluationModelAsc(
+                        runId
+                );
+    }
+
 
     private EvaluationCostResponse buildCostResponse(
             EvaluationResult result,

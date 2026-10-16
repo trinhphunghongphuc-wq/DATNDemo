@@ -55,6 +55,13 @@ public class EvaluationController {
                 .evaluateBatchStageModel(batchId);
     }
 
+    @GetMapping("/{runId}/samples")
+    public List<EvaluationResult> getSamplesByRunId(
+            @PathVariable String runId
+    ) {
+        return evaluationService.getSamplesByRunId(runId);
+    }
+
     @GetMapping("/{runId}/cost")
     public List<EvaluationCostResponse> estimateRunCosts(
             @PathVariable String runId,

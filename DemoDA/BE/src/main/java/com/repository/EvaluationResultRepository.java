@@ -13,4 +13,17 @@ public interface EvaluationResultRepository
     );
 
     List<EvaluationResult> findAllByOrderByCreatedAtDesc();
+
+    // Chỉ các dòng trung bình: giữ nguyên dữ liệu cho trang Admin hiện tại.
+    List<EvaluationResult>
+    findByRunIdAndSampleIndexIsNullOrderByEvaluationModelAsc(String runId);
+
+    List<EvaluationResult>
+    findAllBySampleIndexIsNullOrderByCreatedAtDesc();
+
+    // Các lần đo riêng để xuất bảng thực nghiệm.
+    List<EvaluationResult>
+    findByRunIdAndSampleIndexIsNotNullOrderBySampleIndexAscEvaluationModelAsc(
+            String runId
+    );
 }
