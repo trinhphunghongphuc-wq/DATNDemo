@@ -97,4 +97,7 @@ public class Batch {
     // Tách khỏi các điểm GPS thực nhận đã ký.
     @Column(name = "transport_route_geojson", columnDefinition = "TEXT")
     private String transportRouteGeoJson;
+
+    @Column(name = "retailer_recording_closed", nullable = false)
+    private boolean retailerRecordingClosed;
 }

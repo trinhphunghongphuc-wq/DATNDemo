@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, ShieldCheck } from "lucide-react";
 import axiosClient from "../../api/axiosClient";
+import Pagination from "../../components/common/Pagination";
 
 const STAGES = ["PRODUCER", "DISTRIBUTOR", "RETAILER"];
 
@@ -35,6 +36,9 @@ export default function AdminBatchesPage() {
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
+  const [page, setPage] = useState(1);
+
+
 
   const filteredBatches = useMemo(() => {
     const search = keyword.trim().toLowerCase();
@@ -46,6 +50,15 @@ export default function AdminBatchesPage() {
         String(batch.id).includes(search)
     );
   }, [batches, keyword]);
+
+  const pageSize = 10;
+  const totalPages = Math.ceil(filteredBatches.length / pageSize);
+  const currentPage = Math.min(page, Math.max(totalPages, 1));
+
+  const visibleBatches = filteredBatches.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
   async function loadBatches() {
     setLoading(true);
@@ -192,16 +205,15 @@ export default function AdminBatchesPage() {
                 Không tìm thấy lô hàng.
               </p>
             ) : (
-              filteredBatches.map((batch) => (
+              visibleBatches.map((batch) => (
                 <button
                   key={batch.id}
                   type="button"
                   onClick={() => loadBatchDetail(batch.id)}
-                  className={`mb-1 w-full rounded-xl border p-4 text-left transition-colors ${
-                    selectedId === batch.id
-                      ? "border-blue-500/60 bg-blue-500/10"
-                      : "border-transparent hover:bg-slate-800/70"
-                  }`}
+                  className={`mb-1 w-full rounded-xl border p-4 text-left transition-colors ${selectedId === batch.id
+                    ? "border-blue-500/60 bg-blue-500/10"
+                    : "border-transparent hover:bg-slate-800/70"
+                    }`}
                 >
                   <strong className="block truncate text-sm">
                     {batch.name || `Batch #${batch.id}`}
@@ -259,68 +271,73 @@ export default function AdminBatchesPage() {
                   {actionError}
                 </p>
               )}
+<div className="grid gap-4 lg:grid-cols-3">
+  {STAGES.map((stage) => {
+    const anchor = anchors.find(
+      (item) => item.recordStage === stage
+    );
+    const busy = anchoringStage !== null;
+    const waitingForRetailer =
+      stage === "RETAILER" &&
+      detail != null &&
+      !detail.retailerRecordingClosed;
 
-              <div className="grid gap-4 lg:grid-cols-3">
-                {STAGES.map((stage) => {
-                  const anchor = anchors.find(
-                    (item) => item.recordStage === stage
-                  );
-                  const busy = anchoringStage !== null;
+    return (
+      <div
+        key={stage}
+        className="rounded-xl border border-slate-700 bg-[#0b1020] p-4"
+      >
+        <div className="flex items-center gap-2">
+          <ShieldCheck
+            size={18}
+            className={
+              anchor ? "text-emerald-400" : "text-slate-500"
+            }
+          />
+          <h3 className="font-semibold">{stage}</h3>
+        </div>
 
-                  return (
-                    <div
-                      key={stage}
-                      className="rounded-xl border border-slate-700 bg-[#0b1020] p-4"
-                    >
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck
-                          size={18}
-                          className={
-                            anchor
-                              ? "text-emerald-400"
-                              : "text-slate-500"
-                          }
-                        />
-                        <h3 className="font-semibold">{stage}</h3>
-                      </div>
+        <p
+          className={`mt-3 text-sm ${
+            anchor ? "text-emerald-400" : "text-amber-400"
+          }`}
+        >
+          {anchor ? "Đã có giao dịch anchor" : "Chưa anchor"}
+        </p>
 
-                      <p
-                        className={`mt-3 text-sm ${
-                          anchor
-                            ? "text-emerald-400"
-                            : "text-amber-400"
-                        }`}
-                      >
-                        {anchor
-                          ? "Đã có giao dịch anchor"
-                          : "Chưa anchor"}
-                      </p>
+        {anchor ? (
+          <div className="mt-4 space-y-2 text-xs text-slate-400">
+            <p title={anchor.transactionHash}>
+              TX: {shortHash(anchor.transactionHash)}
+            </p>
+            <p>Block: {anchor.blockNumber ?? "—"}</p>
+            <p>Gas: {anchor.gasUsed ?? "—"}</p>
+            <p>{formatDate(anchor.anchoredAt)}</p>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => handleAnchor(stage)}
+              disabled={busy || !detail || waitingForRetailer}
+              className="mt-4 w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {anchoringStage === stage
+                ? "Đang gửi giao dịch..."
+                : `Anchor ${stage}`}
+            </button>
 
-                      {anchor ? (
-                        <div className="mt-4 space-y-2 text-xs text-slate-400">
-                          <p title={anchor.transactionHash}>
-                            TX: {shortHash(anchor.transactionHash)}
-                          </p>
-                          <p>Block: {anchor.blockNumber ?? "—"}</p>
-                          <p>Gas: {anchor.gasUsed ?? "—"}</p>
-                          <p>{formatDate(anchor.anchoredAt)}</p>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleAnchor(stage)}
-                          disabled={busy || !detail}
-                          className="mt-4 w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {anchoringStage === stage
-                            ? "Đang gửi giao dịch..."
-                            : `Anchor ${stage}`}
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+            {waitingForRetailer && (
+              <p className="mt-2 text-xs text-amber-400">
+                Chờ Retailer hoàn tất ghi nhận trước khi anchor.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    );
+  })}
+</div>
 
               <p className="text-xs text-slate-500">
                 Stage chưa có Merkle root sẽ bị BE từ chối và hiện thông báo

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Pagination from "../../components/common/Pagination";
 import {
   Boxes,
   Database,
@@ -10,12 +11,10 @@ import {
 import axiosClient from "../../api/axiosClient";
 
 const stages = ["PRODUCER", "DISTRIBUTOR", "RETAILER"];
-
 function formatDate(value) {
   if (!value) return "—";
   return new Date(value).toLocaleString("vi-VN");
 }
-
 function Metric({ label, value, Icon, color }) {
   return (
     <div className="rounded-2xl border border-slate-800 bg-[#111827] p-5">
@@ -29,7 +28,6 @@ function Metric({ label, value, Icon, color }) {
     </div>
   );
 }
-
 export default function AdminOverviewPage() {
   const [summary, setSummary] = useState(null);
   const [batches, setBatches] = useState([]);
@@ -39,44 +37,45 @@ export default function AdminOverviewPage() {
   const [anchorLoading, setAnchorLoading] = useState(false);
   const [error, setError] = useState("");
   const [anchorError, setAnchorError] = useState("");
-
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+  const totalPages = Math.ceil(batches.length / pageSize);
+  const currentPage = Math.min(page, Math.max(totalPages, 1));
+  const visibleBatches = batches.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
   async function loadOverview() {
     setLoading(true);
     setError("");
-
     try {
       const [summaryResponse, batchesResponse] = await Promise.all([
         axiosClient.get("/dashboard/summary"),
         axiosClient.get("/admin/batches"),
       ]);
-
       setSummary(summaryResponse.data);
       setBatches(batchesResponse.data ?? []);
     } catch (err) {
       setError(
         err.response?.data?.message ??
-          "Không tải được dữ liệu Admin. Kiểm tra tài khoản và BE."
+        "Không tải được dữ liệu Admin. Kiểm tra tài khoản và BE."
       );
     } finally {
       setLoading(false);
     }
   }
-
   useEffect(() => {
     loadOverview();
   }, []);
-
   async function toggleAnchors(batchId) {
     if (selectedId === batchId) {
       setSelectedId(null);
       return;
     }
-
     setSelectedId(batchId);
     setAnchors([]);
     setAnchorError("");
     setAnchorLoading(true);
-
     try {
       const response = await axiosClient.get(
         `/admin/batches/${batchId}/anchors`
@@ -90,7 +89,6 @@ export default function AdminOverviewPage() {
       setAnchorLoading(false);
     }
   }
-
   return (
     <div className="space-y-6 text-slate-100">
       <header className="flex flex-wrap items-center justify-between gap-4">
@@ -103,7 +101,6 @@ export default function AdminOverviewPage() {
             Theo dõi lô hàng, bản ghi và trạng thái anchor theo từng giai đoạn.
           </p>
         </div>
-
         <button
           type="button"
           onClick={loadOverview}
@@ -114,13 +111,11 @@ export default function AdminOverviewPage() {
           Làm mới
         </button>
       </header>
-
       {error && (
         <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
           {error}
         </div>
       )}
-
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Metric
           label="Lô hàng"
@@ -147,7 +142,6 @@ export default function AdminOverviewPage() {
           color="text-emerald-400"
         />
       </section>
-
       <section className="overflow-hidden rounded-2xl border border-slate-800 bg-[#111827]">
         <div className="border-b border-slate-800 p-5">
           <h2 className="font-semibold">Lô hàng và anchor theo stage</h2>
@@ -155,7 +149,6 @@ export default function AdminOverviewPage() {
             Bấm vào một lô để xem giao dịch của Producer, Distributor, Retailer.
           </p>
         </div>
-
         {loading ? (
           <p className="p-6 text-sm text-slate-400">Đang tải dữ liệu...</p>
         ) : batches.length === 0 ? (
@@ -172,9 +165,8 @@ export default function AdminOverviewPage() {
                   <th className="px-5 py-3">Anchor</th>
                 </tr>
               </thead>
-
               <tbody>
-                {batches.map((batch) => (
+                {visibleBatches.map((batch) => (
                   <tr key={batch.id} className="border-t border-slate-800">
                     <td colSpan={5} className="p-0">
                       <button
@@ -203,7 +195,6 @@ export default function AdminOverviewPage() {
                           Chi tiết <ChevronDown size={15} />
                         </span>
                       </button>
-
                       {selectedId === batch.id && (
                         <div className="border-t border-slate-800 bg-[#0d1423] px-5 py-5">
                           {anchorLoading ? (
@@ -216,7 +207,6 @@ export default function AdminOverviewPage() {
                                 const anchor = anchors.find(
                                   (item) => item.recordStage === stage
                                 );
-
                                 return (
                                   <div
                                     key={stage}
@@ -224,11 +214,10 @@ export default function AdminOverviewPage() {
                                   >
                                     <p className="font-semibold">{stage}</p>
                                     <p
-                                      className={`mt-2 text-sm ${
-                                        anchor
+                                      className={`mt-2 text-sm ${anchor
                                           ? "text-emerald-400"
                                           : "text-slate-400"
-                                      }`}
+                                        }`}
                                     >
                                       {anchor
                                         ? "Có giao dịch anchor"
@@ -263,6 +252,16 @@ export default function AdminOverviewPage() {
               </tbody>
             </table>
           </div>
+        )}
+        {!loading && batches.length > 0 && (
+          <Pagination
+            page={currentPage}
+            totalPages={totalPages}
+            onPageChange={(nextPage) => {
+              setPage(nextPage);
+              setSelectedId(null);
+            }}
+          />
         )}
       </section>
     </div>

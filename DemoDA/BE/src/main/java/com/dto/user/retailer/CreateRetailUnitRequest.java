@@ -2,6 +2,7 @@ package com.dto.user.retailer;
 
 import com.enums.RetailUnitType;
 import lombok.Data;
+import jakarta.validation.Valid;
 
 @Data
 public class CreateRetailUnitRequest {
@@ -19,4 +20,7 @@ public class CreateRetailUnitRequest {
 
     // BULK
     private Double pricePerKg;
+
+    @Valid
+    private RetailStorageReadingRequest initialStorageReading;
 }

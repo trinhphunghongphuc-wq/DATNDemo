@@ -173,29 +173,17 @@ public class AdminServiceImpl implements AdminService {
             RecordStage stage
     ) {
         if (stage == null) {
-            throw new IllegalArgumentException(
-                    "Record stage is required"
-            );
+            throw new IllegalArgumentException("Record stage is required");
         }
 
         Batch batch = batchRepository.findById(batchId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Batch not found with id: "
-                                        + batchId
-                        )
-                );
+                .orElseThrow(() -> new RuntimeException(
+                        "Batch not found with id: " + batchId
+                ));
 
-        /*
-         * Kiểm tra PostgreSQL trước khi gửi transaction,
-         * tránh tốn gas cho một stage đã được anchor.
-         */
         boolean alreadyAnchored =
                 stageAnchorTransactionRepository
-                        .existsByBatch_IdAndRecordStage(
-                                batchId,
-                                stage
-                        );
+                        .existsByBatch_IdAndRecordStage(batchId, stage);
 
         if (alreadyAnchored) {
             throw new IllegalStateException(
@@ -203,26 +191,29 @@ public class AdminServiceImpl implements AdminService {
             );
         }
 
-        String stageRoot = resolveStageRoot(
-                batch,
-                stage
-        );
+        // Retailer phải chốt mọi unit và số đo trước khi Admin gửi root.
+        if (stage == RecordStage.RETAILER
+                && !batch.isRetailerRecordingClosed()) {
+            throw new IllegalStateException(
+                    "Retailer must close recording before Admin can anchor"
+            );
+        }
+
+        String stageRoot = resolveStageRoot(batch, stage);
 
         if (stageRoot == null || stageRoot.isBlank()) {
             throw new IllegalStateException(
-                    stage
-                            + " Merkle root has not been generated"
+                    stage + " Merkle root has not been generated"
             );
         }
 
         try {
             TransactionReceipt receipt =
-                    blockchainConnectionService
-                            .anchorStageRoot(
-                                    batch.getId(),
-                                    stage,
-                                    stageRoot
-                            );
+                    blockchainConnectionService.anchorStageRoot(
+                            batch.getId(),
+                            stage,
+                            stageRoot
+                    );
 
             if (!receipt.isStatusOK()) {
                 throw new IllegalStateException(
@@ -230,61 +221,32 @@ public class AdminServiceImpl implements AdminService {
                 );
             }
 
-            /*
-             * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
-             * Lưu bằng chứng anchor riêng cho từng stage.
-             *
-             * Các số liệu transaction hash, block number và gas used
-             * sẽ được dùng trong phần đánh giá chi phí.
-             */
             StageAnchorTransaction anchorTransaction =
                     StageAnchorTransaction.builder()
                             .batch(batch)
                             .recordStage(stage)
-                            .transactionHash(
-                                    receipt.getTransactionHash()
-                            )
-                            .blockNumber(
-                                    receipt.getBlockNumber()
-                            )
-                            .gasUsed(
-                                    receipt.getGasUsed()
-                            )
-                            .anchoredAt(
-                                    LocalDateTime.now()
-                            )
+                            .transactionHash(receipt.getTransactionHash())
+                            .blockNumber(receipt.getBlockNumber())
+                            .gasUsed(receipt.getGasUsed())
+                            .anchoredAt(LocalDateTime.now())
                             .build();
 
-            stageAnchorTransactionRepository.save(
-                    anchorTransaction
-            );
+            stageAnchorTransactionRepository.save(anchorTransaction);
 
-            /*
-             * Giữ lại dữ liệu legacy để giao diện cũ
-             * vẫn đọc được transaction gần nhất.
-             */
-            batch.setChainTxHash(
-                    receipt.getTransactionHash()
-            );
-
-            batch.setAnchorStatus(
-                    AnchorStatus.ANCHORED
-            );
-
+            // Giữ tương thích với giao diện cũ; trạng thái chuẩn
+            // của từng stage vẫn lấy từ StageAnchorTransaction.
+            batch.setChainTxHash(receipt.getTransactionHash());
+            batch.setAnchorStatus(AnchorStatus.ANCHORED);
             batchRepository.save(batch);
 
             return mapBatchToAdminResponse(batch);
 
         } catch (Exception exception) {
-            batch.setAnchorStatus(
-                    AnchorStatus.ANCHOR_FAILED
-            );
-
+            batch.setAnchorStatus(AnchorStatus.ANCHOR_FAILED);
             batchRepository.save(batch);
 
             throw new RuntimeException(
-                    "Failed to anchor "
-                            + stage
+                    "Failed to anchor " + stage
                             + " Merkle root: "
                             + exception.getMessage(),
                     exception
@@ -365,6 +327,7 @@ public class AdminServiceImpl implements AdminService {
                 .anchorStatus(batch.getAnchorStatus())
                 .createdAt(batch.getCreatedAt())
                 .recordCount(batch.getRecords() == null ? 0 : batch.getRecords().size())
+                .retailerRecordingClosed(batch.isRetailerRecordingClosed())
                 .records(
                         batch.getRecords()
                                 .stream()

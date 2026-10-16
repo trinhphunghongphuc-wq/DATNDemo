@@ -1,19 +1,33 @@
 package com.service.impl;
 
-import com.dto.product.ProductDetailResponse;
-import com.dto.product.ProductListResponse;
-import com.dto.product.TraceabilityResponse;
-import com.dto.product.TraceabilityStepResponse;
+import com.dto.product.*;
 import com.dto.record.RecordItemResponse;
 import com.entity.Batch;
 import com.entity.Record;
+import com.entity.RetailUnit;
 import com.repository.BatchRepository;
 import com.repository.RecordRepository;
+import com.repository.RetailUnitRepository;
 import com.service.JsonExtractService;
 import com.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import com.entity.ProductCategory;
+import com.enums.RecordType;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.service.DataEncryptionService;
+import com.service.IpfsService;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
+
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -24,6 +38,11 @@ public class ProductServiceImpl implements ProductService {
     private final BatchRepository batchRepository;
     private final RecordRepository recordRepository;
     private final JsonExtractService jsonExtractService;
+    private final RetailUnitRepository retailUnitRepository;
+
+    private final ObjectMapper objectMapper;
+    private final IpfsService ipfsService;
+    private final DataEncryptionService dataEncryptionService;
 
     @Override
     public List<ProductListResponse> getAllProducts() {
@@ -139,6 +158,302 @@ public class ProductServiceImpl implements ProductService {
                         || product.getStatus() != null
                         && product.getStatus().equalsIgnoreCase(status))
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public RetailUnitTraceResponse getRetailUnitTrace(String retailCode) {
+        RetailUnit unit = retailUnitRepository.findByRetailCode(retailCode)
+                .orElseThrow(() ->
+                        new IllegalArgumentException("Retail unit not found"));
+
+        Batch batch = unit.getBatch();
+        List<Record> records = recordRepository.findByBatchId(batch.getId());
+
+        JsonNode harvest = records.stream()
+                .filter(record -> record.getRecordType() == RecordType.HARVEST)
+                .findFirst()
+                .map(record -> readRecordData(batch, record))
+                .orElse(null);
+
+        ProductCategory category = batch.getProductCategory();
+
+        RetailUnitTraceResponse.RecommendedConditions recommended =
+                category == null ? null :
+                        new RetailUnitTraceResponse.RecommendedConditions(
+                                category.getTemperatureMin(),
+                                category.getTemperatureMax(),
+                                category.getHumidityMin(),
+                                category.getHumidityMax()
+                        );
+
+        String producerName = batch.getCreatedBy() == null
+                ? null
+                : batch.getCreatedBy().getUsername();
+
+        return new RetailUnitTraceResponse(
+                unit.getRetailCode(),
+                unit.getProductName(),
+                unit.getType(),
+                unit.getAllocatedWeight(),
+                unit.getPackageWeight(),
+                unit.getPackageQuantity(),
+                unit.getExpiryDate() != null
+                        ? unit.getExpiryDate()
+                        : batch.getExpiryDate(),
+                batch.getBatchCode(),
+                batch.getId(),
+                unit.getRetailRecordKey(),
+
+                producerName,
+                text(harvest, "farmName", "farm"),
+                text(harvest, "fieldLocation", "harvestLocation"),
+                parseDate(text(harvest, "harvestDate")),
+                recommended,
+                summarizeTransport(batch, records, category),
+                summarizeRetailStorage(batch, records, unit, category)
+        );
+    }
+
+    private RetailUnitTraceResponse.RetailStorageConditions summarizeRetailStorage(
+            Batch batch,
+            List<Record> records,
+            RetailUnit unit,
+            ProductCategory category
+    ) {
+        List<Double> temperatures = new ArrayList<>();
+        List<Double> humidities = new ArrayList<>();
+        List<LocalDateTime> measuredTimes = new ArrayList<>();
+        int outOfRangeCount = 0;
+
+        for (Record record : records) {
+            if (record.getRecordType() != RecordType.RETAIL) {
+                continue;
+            }
+
+            JsonNode data = readRecordData(batch, record);
+            if (data == null || data.isNull()) {
+                continue;
+            }
+
+            if (!"RETAIL_STORAGE_READING".equals(text(data, "eventType"))
+                    || !unit.getRetailCode().equals(text(data, "retailCode"))) {
+                continue;
+            }
+
+            JsonNode temperatureNode = data.get("temperature");
+            JsonNode humidityNode = data.get("humidity");
+
+            if (temperatureNode == null || !temperatureNode.isNumber()
+                    || humidityNode == null || !humidityNode.isNumber()) {
+                continue;
+            }
+
+            double temperature = temperatureNode.asDouble();
+            double humidity = humidityNode.asDouble();
+
+            temperatures.add(temperature);
+            humidities.add(humidity);
+
+            // Thời điểm record được BE ghi nhận, không lấy giờ tự nhập từ FE.
+            if (record.getCreatedAt() != null) {
+                measuredTimes.add(record.getCreatedAt());
+            }
+
+            if (category != null && (
+                    category.getTemperatureMin() != null
+                            && temperature < category.getTemperatureMin()
+                            || category.getTemperatureMax() != null
+                            && temperature > category.getTemperatureMax()
+                            || category.getHumidityMin() != null
+                            && humidity < category.getHumidityMin()
+                            || category.getHumidityMax() != null
+                            && humidity > category.getHumidityMax()
+            )) {
+                outOfRangeCount++;
+            }
+        }
+
+        if (temperatures.isEmpty()) {
+            return null;
+        }
+
+        return new RetailUnitTraceResponse.RetailStorageConditions(
+                temperatures.stream().mapToDouble(Double::doubleValue).min().orElseThrow(),
+                temperatures.stream().mapToDouble(Double::doubleValue).max().orElseThrow(),
+                humidities.stream().mapToDouble(Double::doubleValue).min().orElseThrow(),
+                humidities.stream().mapToDouble(Double::doubleValue).max().orElseThrow(),
+                measuredTimes.stream().min(LocalDateTime::compareTo).orElse(null),
+                measuredTimes.stream().max(LocalDateTime::compareTo).orElse(null),
+                temperatures.size(),
+                outOfRangeCount,
+                "MANUAL_ENTRY"
+        );
+    }
+
+    private RetailUnitTraceResponse.MeasuredConditions summarizeTransport(
+            Batch batch,
+            List<Record> records,
+            ProductCategory category
+    ) {
+        Double minTemperature = null;
+        Double maxTemperature = null;
+        Double minHumidity = null;
+        Double maxHumidity = null;
+        Instant first = null;
+        Instant last = null;
+        int sampleCount = 0;
+        int outOfRangeCount = 0;
+
+        boolean hasRecommendedRange = category != null
+                && (category.getTemperatureMin() != null
+                || category.getTemperatureMax() != null
+                || category.getHumidityMin() != null
+                || category.getHumidityMax() != null);
+
+        for (Record record : records) {
+            if (record.getRecordType() != RecordType.TRANSPORT) {
+                continue;
+            }
+
+            JsonNode data = readRecordData(batch, record);
+            JsonNode temperatureNode = data.path("temperature");
+            JsonNode humidityNode = data.path("humidity");
+
+            // Không biến giá trị thiếu thành 0°C hoặc 0% RH.
+            if (!temperatureNode.isNumber() || !humidityNode.isNumber()) {
+                continue;
+            }
+
+            double temperature = temperatureNode.asDouble();
+            double humidity = humidityNode.asDouble();
+
+            if (!Double.isFinite(temperature)
+                    || !Double.isFinite(humidity)
+                    || humidity < 0
+                    || humidity > 100) {
+                continue;
+            }
+
+            minTemperature = minTemperature == null
+                    ? temperature : Math.min(minTemperature, temperature);
+            maxTemperature = maxTemperature == null
+                    ? temperature : Math.max(maxTemperature, temperature);
+            minHumidity = minHumidity == null
+                    ? humidity : Math.min(minHumidity, humidity);
+            maxHumidity = maxHumidity == null
+                    ? humidity : Math.max(maxHumidity, humidity);
+
+            sampleCount++;
+
+            if (hasRecommendedRange
+                    && isOutOfRange(temperature, humidity, category)) {
+                outOfRangeCount++;
+            }
+
+            String timestamp = text(data, "timestamp");
+            if (timestamp != null) {
+                try {
+                    Instant measuredAt = OffsetDateTime.parse(timestamp).toInstant();
+
+                    if (first == null || measuredAt.isBefore(first)) {
+                        first = measuredAt;
+                    }
+                    if (last == null || measuredAt.isAfter(last)) {
+                        last = measuredAt;
+                    }
+                } catch (DateTimeParseException ignored) {
+                    // Giữ mẫu đo; chỉ bỏ qua timestamp không đúng ISO offset.
+                }
+            }
+        }
+
+        if (sampleCount == 0) {
+            return null;
+        }
+
+        return new RetailUnitTraceResponse.MeasuredConditions(
+                minTemperature,
+                maxTemperature,
+                minHumidity,
+                maxHumidity,
+                first == null ? null : first.toString(),
+                last == null ? null : last.toString(),
+                sampleCount,
+                hasRecommendedRange ? outOfRangeCount : null
+        );
+    }
+
+    private boolean isOutOfRange(
+            double temperature,
+            double humidity,
+            ProductCategory category
+    ) {
+        return category.getTemperatureMin() != null
+                && temperature < category.getTemperatureMin()
+                || category.getTemperatureMax() != null
+                && temperature > category.getTemperatureMax()
+                || category.getHumidityMin() != null
+                && humidity < category.getHumidityMin()
+                || category.getHumidityMax() != null
+                && humidity > category.getHumidityMax();
+    }
+
+    private JsonNode readRecordData(Batch batch, Record record) {
+        try {
+            String rawJson = record.getRawJson();
+
+            if (Boolean.TRUE.equals(record.getEncrypted())) {
+                if (record.getIpfsCid() == null) {
+                    throw new IllegalStateException(
+                            "Encrypted record has no IPFS CID"
+                    );
+                }
+
+                String encryptedJson = ipfsService.getJson(record.getIpfsCid());
+                String context = "batch:" + batch.getId()
+                        + "|record:" + record.getRecordKey();
+
+                rawJson = dataEncryptionService.decrypt(
+                        encryptedJson,
+                        context
+                );
+            }
+
+            return objectMapper.readTree(rawJson);
+        } catch (Exception ex) {
+            throw new IllegalStateException(
+                    "Cannot read record " + record.getRecordKey(),
+                    ex
+            );
+        }
+    }
+
+    private String text(JsonNode data, String... keys) {
+        if (data == null) {
+            return null;
+        }
+
+        for (String key : keys) {
+            JsonNode value = data.path(key);
+            if (value.isTextual() && !value.asText().isBlank()) {
+                return value.asText();
+            }
+        }
+
+        return null;
+    }
+
+    private LocalDate parseDate(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException ex) {
+            return null;
+        }
     }
 
     private boolean containsIgnoreCase(String source, String keyword) {

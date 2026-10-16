@@ -84,7 +84,8 @@ public class Record {
     @JsonIgnore
     private Batch batch;
 
-    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "record_type", nullable = false, length = 32)
     private RecordType recordType;
 
     @PrePersist

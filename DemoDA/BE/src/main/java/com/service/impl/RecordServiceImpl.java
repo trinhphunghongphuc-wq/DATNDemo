@@ -70,6 +70,13 @@ public class RecordServiceImpl implements RecordService {
     ) {
         BatchStatus status = batch.getStatus();
 
+        if (recordStage == RecordStage.RETAILER
+                && batch.isRetailerRecordingClosed()) {
+            throw new IllegalStateException(
+                    "Retailer recording is closed; cannot add " + recordType
+            );
+        }
+
         boolean allowed = switch (recordStage) {
             case PRODUCER ->
                     status == BatchStatus.CREATED
