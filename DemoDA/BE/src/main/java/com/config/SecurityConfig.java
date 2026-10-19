@@ -53,7 +53,7 @@ public class SecurityConfig {
                                 HttpMethod.GET,
                                 "/api/verify/batches/*/records/*/verify-on-chain"
                         ).permitAll()
-
+                        .requestMatchers("/api/verify/**").hasRole("RETAILER")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
