@@ -40,6 +40,7 @@ public class IpfsServiceImpl implements IpfsService {
         this.restClient = restClientBuilder
                 .requestFactory(requestFactory)
                 .baseUrl(ipfsApiUrl)
+                .defaultHeader("Origin", ipfsApiUrl)
                 .build();
         this.objectMapper = objectMapper;
     }
@@ -74,7 +75,6 @@ public class IpfsServiceImpl implements IpfsService {
             );
         }
     }
-
     private String uploadBytes(byte[] content, String filename) {
         ByteArrayResource resource = new ByteArrayResource(content) {
             @Override
@@ -88,7 +88,7 @@ public class IpfsServiceImpl implements IpfsService {
         multipartBody.add("file", resource);
 
         try {
-            String responseBody = restClient.post()
+            return restClient.post()
                     .uri(uriBuilder -> uriBuilder
                             .path("/api/v0/add")
                             .queryParam("pin", "true")
@@ -97,51 +97,38 @@ public class IpfsServiceImpl implements IpfsService {
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(multipartBody)
                     .exchange((request, response) -> {
-                        String body = new String(
-                                response.getBody().readAllBytes(),
-                                StandardCharsets.UTF_8
-                        );
-
                         if (!response.getStatusCode().is2xxSuccessful()) {
                             throw new IllegalStateException(
-                                    "IPFS HTTP "
-                                            + response.getStatusCode()
-                                            + ": "
-                                            + body
+                                    "IPFS HTTP " + response.getStatusCode()
                             );
                         }
 
-                        return body;
+                        JsonNode responseJson =
+                                objectMapper.readTree(response.getBody());
+
+                        if (responseJson == null) {
+                            throw new IllegalStateException(
+                                    "IPFS returned an empty response"
+                            );
+                        }
+
+                        String cid = responseJson.path("Hash").asText();
+
+                        if (cid.isBlank()) {
+                            throw new IllegalStateException(
+                                    "IPFS response does not contain a CID"
+                            );
+                        }
+
+                        return cid;
                     });
-
-            if (responseBody == null || responseBody.isBlank()) {
-                throw new IllegalStateException(
-                        "IPFS returned an empty response"
-                );
-            }
-
-            JsonNode responseJson = objectMapper.readTree(
-                    responseBody.trim()
-            );
-
-            String cid = responseJson.path("Hash").asText();
-
-            if (cid.isBlank()) {
-                throw new IllegalStateException(
-                        "IPFS response does not contain a CID: "
-                                + responseBody
-                );
-            }
-
-            return cid;
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
             throw new IllegalStateException(
                     "Cannot upload file to IPFS ("
                             + e.getClass().getSimpleName()
-                            + "): "
-                            + e.getMessage(),
+                            + "): " + e.getMessage(),
                     e
             );
         }

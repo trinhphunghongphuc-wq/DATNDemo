@@ -2,6 +2,7 @@ package com.controller;
 
 import com.dto.user.distributor.TransportJourneyResponse;
 import com.dto.user.distributor.TransportRouteRequest;
+import com.dto.user.distributor.TransportSignatureEvidenceResponse;
 import com.security.CustomUserDetails;
 import com.service.impl.TransportJourneyService;
 import jakarta.validation.Valid;
@@ -39,6 +40,20 @@ public class TransportJourneyController {
     ) {
         return journeys.get(
                 batchId,
+                (CustomUserDetails) authentication.getPrincipal()
+        );
+    }
+
+    @GetMapping("/{batchId}/journey/points/{recordKey}/signature-evidence")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DISTRIBUTOR', 'RETAILER')")
+    public TransportSignatureEvidenceResponse signatureEvidence(
+            @PathVariable Long batchId,
+            @PathVariable String recordKey,
+            Authentication authentication
+    ) {
+        return journeys.signatureEvidence(
+                batchId,
+                recordKey,
                 (CustomUserDetails) authentication.getPrincipal()
         );
     }

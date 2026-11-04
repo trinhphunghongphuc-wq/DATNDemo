@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   CircleMarker,
@@ -16,27 +16,9 @@ import {
   planTransportRoute,
 } from "../../api/distributorApi";
 import axiosClient from "../../api/axiosClient";
+import Pagination from "../../components/common/Pagination";
 
 const mapTilerKey = import.meta.env.VITE_MAPTILER_KEY;
-
-function javaDouble(value) {
-  return Number.isInteger(value) ? `${value}.0` : String(value);
-}
-
-function signaturePayload(batchId, vehicle, sequence, gps, temperature, humidity, timestamp) {
-  // Must match DistributorServiceImpl.buildUnsignedTransportPayload field order and
-  // Jackson's serialization of Java Double values (including the .0 for integers).
-  return `{"batchId":${Number(batchId)},"vehicleId":${vehicle.id},"sequence":${sequence},` +
-    `"vehiclePlate":${JSON.stringify(vehicle.vehiclePlate)},` +
-    `"deviceId":${JSON.stringify(vehicle.deviceId)},` +
-    `"sensorFirmware":${JSON.stringify(vehicle.sensorFirmware)},` +
-    `"gps":${JSON.stringify(gps)},"temperature":${javaDouble(temperature)},` +
-    `"humidity":${javaDouble(humidity)},"timestamp":${JSON.stringify(timestamp)}}`;
-}
-
-function toBase64(bytes) {
-  return btoa(String.fromCharCode(...new Uint8Array(bytes)));
-}
 
 function PlaceInput({ label, placeholder, selected, onSelect }) {
   const [query, setQuery] = useState("");
@@ -225,6 +207,7 @@ function JourneyMap({ routePositions, points, origin, destination, canSelect }) 
                 {point.timestamp ?? ""}
               </Popup>
             </CircleMarker>
+
           );
         })}
       </MapContainer>
@@ -249,11 +232,11 @@ export default function DistributorJourneyPage() {
   const [demoTemperature, setDemoTemperature] = useState("");
   const [demoHumidity, setDemoHumidity] = useState("");
 
-  const [demoRunning, setDemoRunning] = useState(false);
-  const [demoProgress, setDemoProgress] = useState(0);
-  const demoActive = useRef(false);
-  const demoStarting = useRef(false);
-  const demoTimer = useRef(null);
+  const [demoRun, setDemoRun] = useState(null);
+  const [demoStatusLoaded, setDemoStatusLoaded] = useState(false);
+  const [demoStarting, setDemoStarting] = useState(false);
+  const demoRunning = demoRun?.status === "RUNNING" ||
+    demoRun?.status === "STOPPING";
   const [warehouse, setWarehouse] = useState({
     location: "",
     temperature: "",
@@ -266,10 +249,22 @@ export default function DistributorJourneyPage() {
     warehouseAddress: "",
   });
 
-
   const [savingReturn, setSavingReturn] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+
+  const [evidence, setEvidence] = useState(null);
+  const [selectedEvidenceKey, setSelectedEvidenceKey] = useState(null);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [evidenceError, setEvidenceError] = useState("");
+  const [evidencePage, setEvidencePage] = useState(1);
+  const [signedRequestText, setSignedRequestText] = useState("");
+  const [changedTemperature, setChangedTemperature] = useState("");
+  const [attackBusy, setAttackBusy] = useState(false);
+  const [preparingSignedRecord, setPreparingSignedRecord] = useState(false);
+  const [attackStep, setAttackStep] = useState("idle");
+  const [attackResults, setAttackResults] = useState([]);
+  const [attackError, setAttackError] = useState("");
 
   const loadJourney = useCallback(async () => {
     const response = await getTransportJourney(batchId);
@@ -282,16 +277,27 @@ export default function DistributorJourneyPage() {
       try {
         setLoading(true);
         setError("");
-        const [batchResponse, journeyResponse, vehiclesResponse] = await Promise.all([
+        const [batchResponse, journeyResponse, vehiclesResponse, runResponse] = await Promise.all([
           getDistributorBatchDetail(batchId),
           getTransportJourney(batchId),
           axiosClient.get("/distributor/vehicles"),
+          axiosClient.get(`/distributor/batches/${batchId}/demo-run`),
         ]);
         if (active) {
           setBatch(batchResponse.data);
           setJourney(journeyResponse.data);
           setVehicles(vehiclesResponse.data ?? []);
-          setVehicleId((current) => current || String(vehiclesResponse.data?.[0]?.id ?? ""));
+          // Phiên BE là nguồn sự thật khi quay lại trang.
+          setDemoRun(runResponse.data);
+          setDemoStatusLoaded(true);
+          if (Number(runResponse.data?.totalPoints) > 0) {
+            setDemoCount(Number(runResponse.data.totalPoints));
+          }
+          setVehicleId((current) => String(
+            runResponse.data?.vehicleId ??
+            (current || vehiclesResponse.data?.find((vehicle) => !vehicle.demoBusy)?.id ||
+            vehiclesResponse.data?.[0]?.id || "")
+          ));
         }
       } catch (err) {
         if (active) setError(err.response?.data?.message ?? "Không tải được hành trình.");
@@ -302,10 +308,253 @@ export default function DistributorJourneyPage() {
     loadInitial();
     return () => {
       active = false;
-      demoActive.current = false;
-      clearTimeout(demoTimer.current);
     };
   }, [batchId]);
+
+  useEffect(() => {
+    let active = true;
+    let checking = false;
+    let previousSent = null;
+    let previousStatus = null;
+    let hydrated = false;
+
+    async function refreshDemo() {
+      if (checking) return;
+      checking = true;
+      try {
+        const { data: run } = await axiosClient.get(
+          `/distributor/batches/${batchId}/demo-run`
+        );
+        if (!active) return;
+        setDemoRun(run);
+        setDemoStatusLoaded(true);
+        if (!hydrated) {
+          hydrated = true;
+          if (Number(run.totalPoints) > 0) {
+            setDemoCount(Number(run.totalPoints));
+          }
+          if (run.vehicleId != null) setVehicleId(String(run.vehicleId));
+        }
+
+        if (run.sentPoints !== previousSent || run.status !== previousStatus) {
+          previousSent = run.sentPoints;
+          previousStatus = run.status;
+          const [journeyResponse, batchResponse, vehiclesResponse] = await Promise.all([
+            getTransportJourney(batchId),
+            getDistributorBatchDetail(batchId),
+            axiosClient.get("/distributor/vehicles"),
+          ]);
+          if (!active) return;
+          setJourney(journeyResponse.data);
+          setBatch(batchResponse.data);
+          setVehicles(vehiclesResponse.data ?? []);
+        }
+      } catch (err) {
+        if (active) setError(
+          err.response?.data?.message ?? "Không đọc được tiến độ demo từ BE."
+        );
+      } finally {
+        checking = false;
+      }
+    }
+
+    refreshDemo();
+    const pollId = window.setInterval(refreshDemo, 3000);
+    function refreshWhenVisible() {
+      if (document.visibilityState === "visible") refreshDemo();
+    }
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      active = false;
+      window.clearInterval(pollId);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [batchId]);
+
+  async function openEvidence(recordKey) {
+    if (!recordKey) return;
+    setSelectedEvidenceKey(recordKey);
+    setEvidence(null);
+    setEvidenceError("");
+    setEvidenceLoading(true);
+    try {
+      const response = await axiosClient.get(
+        `/transport/batches/${batchId}/journey/points/${encodeURIComponent(recordKey)}/signature-evidence`
+      );
+      setEvidence(response.data);
+    } catch (err) {
+      setEvidenceError(
+        err.response?.data?.message ?? "Không tải được bằng chứng điểm đo."
+      );
+    } finally {
+      setEvidenceLoading(false);
+    }
+  }
+
+  function closeEvidence() {
+    setSelectedEvidenceKey(null);
+    setEvidence(null);
+    setEvidenceError("");
+  }
+
+  async function prepareSignedRecord() {
+    if (vehicles.some((vehicle) => Number(vehicle.id) === Number(vehicleId) && vehicle.demoBusy)) {
+      setAttackError("Xe đang chạy phiên demo khác. Hãy chọn xe rảnh.");
+      return;
+    }
+    const firstPosition = routePositions[0];
+    const gps = latestPoint
+      ? `${latestPoint.latitude},${latestPoint.longitude}`
+      : firstPosition ? `${firstPosition[0]},${firstPosition[1]}` : null;
+    if (!vehicleId || !gps) {
+      setAttackError("Chọn xe và lập tuyến trước khi tạo bản tin mẫu.");
+      return;
+    }
+    setPreparingSignedRecord(true);
+    setAttackError("");
+    setAttackResults([]);
+    setAttackStep("idle");
+    try {
+      const temperature = demoTemperature.trim() !== ""
+        ? Number(demoTemperature) : Number(latestPoint?.temperature ?? 12);
+      const humidity = demoHumidity.trim() !== ""
+        ? Number(demoHumidity) : Number(latestPoint?.humidity ?? 90);
+      if (!Number.isFinite(temperature) || !Number.isFinite(humidity)
+          || humidity < 0 || humidity > 100) {
+        throw new Error("Nhiệt độ hoặc độ ẩm mẫu không hợp lệ.");
+      }
+      const { data } = await axiosClient.post(
+        `/distributor/batches/${batchId}/demo-signed-record`,
+        { vehicleId: Number(vehicleId), gps, temperature, humidity }
+      );
+      setSignedRequestText(JSON.stringify(data, null, 2));
+      const { data: updatedVehicles } = await axiosClient.get("/distributor/vehicles");
+      setVehicles(updatedVehicles ?? []);
+    } catch (err) {
+      setSignedRequestText("");
+      setAttackError(err.response?.data?.message ?? err.message ?? "Không tạo được bản tin mẫu.");
+    } finally {
+      setPreparingSignedRecord(false);
+    }
+  }
+
+  async function testSignedRequest(mode) {
+    setAttackError("");
+
+    let original;
+    try {
+      original = JSON.parse(signedRequestText);
+    } catch {
+      setAttackError("Dán JSON request do lệnh sign của simulator in ra.");
+      return;
+    }
+
+    if (!original || typeof original !== "object" ||
+        !Number.isInteger(Number(original.vehicleId)) ||
+        !Number.isInteger(Number(original.sequence)) ||
+        typeof original.deviceSignature !== "string" ||
+        !original.deviceSignature.trim() ||
+        !original.gps || !original.timestamp ||
+        original.temperature == null || original.humidity == null) {
+      setAttackError("JSON thiếu trường của transport record đã ký.");
+      return;
+    }
+    if (mode === "original" && attackStep !== "forgedRejected") {
+      setAttackError("Hãy gửi bản sửa và thấy BE từ chối chữ ký trước.");
+      return;
+    }
+    if (mode === "replay" && attackStep !== "originalAccepted") {
+      setAttackError("Hãy gửi bản gốc thành công trước khi thử phát lại.");
+      return;
+    }
+
+    const newTemperature = Number(changedTemperature);
+    if (mode === "forged" &&
+        (changedTemperature.trim() === "" ||
+        !Number.isFinite(newTemperature) ||
+        newTemperature === Number(original.temperature))) {
+      setAttackError("Nhiệt độ sửa phải khác nhiệt độ trong JSON đã ký.");
+      return;
+    }
+
+    setAttackBusy(true);
+    try {
+      const { data: beforeVehicles } = await axiosClient.get("/distributor/vehicles");
+      const vehicle = (beforeVehicles ?? []).find(
+        (item) => Number(item.id) === Number(original.vehicleId)
+      );
+      if (!vehicle) throw new Error("Xe trong JSON không thuộc Distributor hiện tại.");
+      if (vehicle.demoBusy) throw new Error("Xe đang bận chạy demo. Hãy đợi hoàn tất.");
+
+      const beforeSequence = Number(vehicle.lastSequence ?? 0);
+      if (mode !== "replay" && Number(original.sequence) !== beforeSequence + 1) {
+        throw new Error(`BE đang đợi sequence ${beforeSequence + 1}; JSON có ${original.sequence}.`);
+      }
+      if (mode === "replay" && Number(original.sequence) !== beforeSequence) {
+        throw new Error("JSON không còn là bản tin vừa được BE chấp nhận.");
+      }
+
+      const body = mode === "forged"
+        ? { ...original, temperature: newTemperature }
+        : original;
+      let status;
+      let message;
+      try {
+        const response = await axiosClient.post(
+          `/distributor/batches/${batchId}/transport-record`, body
+        );
+        status = response.status;
+        message = "BE đã chấp nhận bản tin.";
+      } catch (err) {
+        if (!err.response) throw err;
+        status = err.response.status;
+        message = err.response.data?.message ?? `BE trả HTTP ${status}.`;
+      }
+
+      const { data: afterVehicles } = await axiosClient.get("/distributor/vehicles");
+      setVehicles(afterVehicles ?? []);
+      const afterSequence = Number(
+        (afterVehicles ?? []).find((item) => Number(item.id) === Number(original.vehicleId))
+          ?.lastSequence ?? 0
+      );
+      const expected = mode === "forged"
+        ? /invalid device signature/i.test(message) && afterSequence === beforeSequence
+        : mode === "original"
+          ? status >= 200 && status < 300 && afterSequence === beforeSequence + 1
+          : /invalid device sequence/i.test(message) && afterSequence === beforeSequence;
+
+      setAttackResults((previous) => [
+        ...previous,
+        { mode, expected, status, message, beforeSequence, afterSequence },
+      ]);
+      if (expected) {
+        setAttackStep(mode === "forged" ? "forgedRejected"
+          : mode === "original" ? "originalAccepted" : "replayRejected");
+      }
+      if (status >= 200 && status < 300) {
+        await loadJourney();
+        const response = await getDistributorBatchDetail(batchId);
+        setBatch(response.data);
+      }
+    } catch (err) {
+      setAttackError(err.response?.data?.message ?? err.message ?? "Không chạy được phép thử.");
+    } finally {
+      setAttackBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedEvidenceKey) return;
+    function onEscape(event) {
+      if (event.key === "Escape" && !evidenceLoading) {
+        setSelectedEvidenceKey(null);
+        setEvidence(null);
+        setEvidenceError("");
+      }
+    }
+    document.addEventListener("keydown", onEscape);
+    return () => document.removeEventListener("keydown", onEscape);
+  }, [selectedEvidenceKey, evidenceLoading]);
 
 
   useEffect(() => {
@@ -338,7 +587,24 @@ export default function DistributorJourneyPage() {
   }, [journey?.plannedRoute]);
 
   const points = journey?.points ?? [];
+  const evidenceRows = points.map((point, index) => ({
+    point,
+    pointNumber: index + 1,
+  })).reverse();
+  const evidencePageSize = 5;
+  const evidenceTotalPages = Math.ceil(evidenceRows.length / evidencePageSize);
+  const currentEvidencePage = Math.min(
+    evidencePage,
+    Math.max(evidenceTotalPages, 1)
+  );
+  const visibleEvidenceRows = evidenceRows.slice(
+    (currentEvidencePage - 1) * evidencePageSize,
+    currentEvidencePage * evidencePageSize
+  );
   const latestPoint = points.at(-1);
+  const selectedVehicle = vehicles.find(
+    (vehicle) => Number(vehicle.id) === Number(vehicleId)
+  );
   const canPlanRoute =
     batch?.status === "RECEIVED_BY_DISTRIBUTOR" &&
     !journey?.plannedRoute &&
@@ -351,105 +617,64 @@ export default function DistributorJourneyPage() {
     Math.abs(Number(latestPoint.longitude) - destinationPosition[1]) < 0.003);
 
   async function handleStartDemo() {
-    if (demoActive.current || demoStarting.current) return;
+    if (demoRunning || demoStarting) return;
     const count = Number(demoCount);
-    if (demoTemperature.trim() === "" || demoHumidity.trim() === "") {
-      setError("Batch chưa có ngưỡng khuyến nghị; hãy nhập nhiệt độ và độ ẩm demo.");
-      return;
-    }
     const temperature = Number(demoTemperature);
     const humidity = Number(demoHumidity);
+
     if (!vehicleId) {
       setError("Chọn xe trước khi chạy demo.");
       return;
     }
-    if (!Number.isInteger(count) || count < 2 || count > 100 || count > routePositions.length ||
-      !Number.isFinite(temperature) || !Number.isFinite(humidity) || humidity < 0 || humidity > 100) {
-      setError(`Chọn 2–${Math.min(100, routePositions.length)} điểm; kiểm tra nhiệt độ và độ ẩm (0–100%).`);
+    if (
+      !Number.isInteger(count) || count < 2 || count > 100 ||
+      count > routePositions.length ||
+      demoTemperature.trim() === "" || demoHumidity.trim() === "" ||
+      !Number.isFinite(temperature) || !Number.isFinite(humidity) ||
+      humidity < 0 || humidity > 100
+    ) {
+      setError("Kiểm tra số điểm, nhiệt độ và độ ẩm demo.");
       return;
     }
 
     setError("");
     setNotice("");
-    demoStarting.current = true;
+    setDemoStarting(true);
     try {
-      const { data: currentVehicles } = await axiosClient.get("/distributor/vehicles");
-      const vehicle = currentVehicles.find((item) => String(item.id) === vehicleId);
-      if (!vehicle) {
-        throw new Error("Không tìm được xe đang hoạt động của Distributor.");
-      }
-      // Private key is non-extractable and remains in this browser session.
-      const keyPair = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"]);
-      const publicKey = toBase64(await crypto.subtle.exportKey("spki", keyPair.publicKey));
-      const { data: registration } = await axiosClient.post(
-        `/distributor/vehicles/${vehicle.id}/demo-public-key`,
-        { publicKey }
+      const { data } = await axiosClient.post(
+        `/distributor/batches/${batchId}/demo-run`,
+        { vehicleId: Number(vehicleId), pointCount: count, temperature, humidity }
       );
-      const firstSequence = Number(registration.lastSequence) + 1;
-      if (!Number.isSafeInteger(firstSequence) || firstSequence < 1) {
-        throw new Error("BE không trả về lastSequence hợp lệ.");
-      }
-      demoActive.current = true;
-      setDemoRunning(true);
-      setDemoProgress(0);
-
-      async function sendPoint(index) {
-        if (!demoActive.current) return;
-        try {
-          const position = routePositions[Math.round(index * (routePositions.length - 1) / (count - 1))];
-          const gps = `${position[0].toFixed(6)},${position[1].toFixed(6)}`;
-          const timestamp = new Date().toISOString();
-          const sequence = firstSequence + index;
-          const payload = signaturePayload(batchId, vehicle, sequence, gps, temperature, humidity, timestamp);
-          const signature = toBase64(await crypto.subtle.sign("Ed25519", keyPair.privateKey, new TextEncoder().encode(payload)));
-          await axiosClient.post(`/distributor/batches/${batchId}/transport-record`, {
-            vehicleId: vehicle.id,
-            sequence,
-            gps,
-            temperature,
-            humidity,
-            timestamp,
-            deviceSignature: signature,
-          });
-          const [journeyResponse, batchResponse] = await Promise.all([
-            getTransportJourney(batchId),
-            getDistributorBatchDetail(batchId),
-          ]);
-          setJourney(journeyResponse.data);
-          setBatch(batchResponse.data);
-          setDemoProgress(index + 1);
-          if (!demoActive.current) return;
-          if (index + 1 < count) {
-            demoTimer.current = setTimeout(() => sendPoint(index + 1), 15000);
-          } else {
-            demoActive.current = false;
-            setDemoRunning(false);
-            setNotice("Demo hoàn tất. Kiểm tra các điểm GPS trước khi xác nhận giao hàng.");
-          }
-        } catch (err) {
-          demoActive.current = false;
-          setDemoRunning(false);
-          setError(err.response?.data?.message ?? err.message ?? "Không gửi được điểm GPS demo.");
-        }
-      }
-
-      await sendPoint(0);
+      setDemoRun(data);
+      setDemoStatusLoaded(true);
+      if (Number(data.totalPoints) > 0) setDemoCount(Number(data.totalPoints));
+      setVehicleId(String(data.vehicleId));
+      setNotice("BE đã nhận phiên demo và sẽ gửi một điểm mỗi 15 giây.");
+      const { data: updatedVehicles } = await axiosClient.get("/distributor/vehicles");
+      setVehicles(updatedVehicles ?? []);
     } catch (err) {
-      demoActive.current = false;
-      setDemoRunning(false);
-      setError(err.response?.status === 404
-        ? "API demo chưa bật. Đặt APP_DEMO_DEVICE_ENABLED=true và chạy lại BE."
-        : err.response?.data?.message ?? err.message ?? "Không bắt đầu được demo.");
+      setError(err.response?.data?.message ?? err.message ?? "Không bắt đầu được demo.");
     } finally {
-      demoStarting.current = false;
+      setDemoStarting(false);
     }
   }
 
-  function handleStopDemo() {
-    demoActive.current = false;
-    clearTimeout(demoTimer.current);
-    setDemoRunning(false);
-    setNotice("Đã dừng demo. Lần chạy mới bắt đầu lại từ đầu tuyến với sequence tiếp theo.");
+  async function handleStopDemo() {
+    setError("");
+    try {
+      const { data } = await axiosClient.post(
+        `/distributor/batches/${batchId}/demo-run/stop`
+      );
+      setDemoRun(data);
+      setDemoStatusLoaded(true);
+      setNotice(data.status === "STOPPING"
+        ? "Đang hoàn tất điểm hiện tại rồi dừng demo."
+        : "Đã dừng demo.");
+      const { data: updatedVehicles } = await axiosClient.get("/distributor/vehicles");
+      setVehicles(updatedVehicles ?? []);
+    } catch (err) {
+      setError(err.response?.data?.message ?? "Không dừng được demo.");
+    }
   }
 
   async function handleConfirmDelivery() {
@@ -613,34 +838,73 @@ export default function DistributorJourneyPage() {
         <div className="space-y-3 rounded-xl border border-slate-800 bg-[#111827] p-4">
           <h2 className="font-semibold">Demo GPS có chữ ký · 15 giây/điểm</h2>
           <p className="text-sm text-slate-400">
-            Chế độ demo: trình duyệt tự tạo khóa mô phỏng cho xe đã chọn. Private key không gửi lên BE; BE chỉ lưu public key và nhận các điểm GPS đã ký.
+            Chế độ demo: BE tạo khóa Ed25519 mô phỏng và gửi từng điểm trên tuyến đã lập.
+            Xe được đánh dấu đang bận cho tới khi phiên hoàn tất hoặc dừng.
           </p>
           <div className="grid gap-3 md:grid-cols-2">
             <label className="text-sm">Xe dùng cho demo
-              <select value={vehicleId} disabled={demoRunning} onChange={(e) => setVehicleId(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2">
-                {vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.vehiclePlate} · {vehicle.deviceId}</option>)}
+              <select value={vehicleId} disabled={!demoStatusLoaded || demoRunning || demoStarting}
+                onChange={(e) => {
+                  setVehicleId(e.target.value);
+                  setSignedRequestText("");
+                  setAttackResults([]);
+                  setAttackStep("idle");
+                }}
+                className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2">
+                {vehicles.map((vehicle) => (
+                  <option key={vehicle.id} value={vehicle.id}
+                    disabled={vehicle.demoBusy && Number(demoRun?.vehicleId) !== vehicle.id}>
+                    {vehicle.vehiclePlate} · {vehicle.deviceId}{vehicle.demoBusy ? " · Đang bận" : ""}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="text-sm">Số điểm (2–{Math.min(100, routePositions.length)})
-              <input type="number" min="2" max={Math.min(100, routePositions.length)} value={demoCount} disabled={demoRunning} onChange={(e) => setDemoCount(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2" />
+              <input type="number" min="2" max={Math.min(100, routePositions.length)}
+                value={demoCount} disabled={!demoStatusLoaded || demoRunning || demoStarting}
+                onChange={(e) => setDemoCount(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2" />
             </label>
             <div className="grid grid-cols-2 gap-3">
               <label className="text-sm">Nhiệt độ (°C)
-                <input type="number" step="any" value={demoTemperature} disabled={demoRunning} onChange={(e) => setDemoTemperature(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2" />
+                <input type="number" step="any" value={demoTemperature}
+                  disabled={!demoStatusLoaded || demoRunning || demoStarting}
+                  onChange={(e) => setDemoTemperature(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2" />
               </label>
               <label className="text-sm">Độ ẩm (%)
-                <input type="number" min="0" max="100" step="any" value={demoHumidity} disabled={demoRunning} onChange={(e) => setDemoHumidity(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2" />
+                <input type="number" min="0" max="100" step="any" value={demoHumidity}
+                  disabled={!demoStatusLoaded || demoRunning || demoStarting}
+                  onChange={(e) => setDemoHumidity(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2" />
               </label>
             </div>
           </div>
           <div className="flex items-center gap-3">
             {demoRunning ? (
-              <button type="button" onClick={handleStopDemo} className="rounded-lg border border-red-500 px-4 py-2 text-sm">Dừng demo</button>
+              <button type="button" onClick={handleStopDemo}
+                disabled={demoRun?.status === "STOPPING"}
+                className="rounded-lg border border-red-500 px-4 py-2 text-sm disabled:opacity-40">
+                {demoRun?.status === "STOPPING" ? "Đang dừng..." : "Dừng demo"}
+              </button>
             ) : (
-              <button type="button" onClick={handleStartDemo} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold">Bắt đầu demo</button>
+              <button type="button" onClick={handleStartDemo} disabled={!demoStatusLoaded || demoStarting}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold disabled:opacity-40">
+                {!demoStatusLoaded ? "Đang kiểm tra phiên..." :
+                  demoStarting ? "Đang bắt đầu..." : "Bắt đầu demo"}
+              </button>
             )}
-            <span className="text-sm text-slate-400">Đã gửi {demoProgress}/{demoCount} điểm</span>
+            <span className="text-sm text-slate-400">
+              {demoStatusLoaded
+                ? `Đã gửi ${demoRun?.sentPoints ?? 0}/${demoRun?.totalPoints ?? 0} điểm`
+                : "Đang tải tiến độ..."}
+            </span>
           </div>
+          {demoRun?.status === "FAILED" && (
+            <p className="text-sm text-red-400">
+              Demo thất bại: {demoRun.error || "Không rõ nguyên nhân"}
+            </p>
+          )}
         </div>
       )}
       {batch?.status === "IN_DISTRIBUTION" && (
@@ -722,6 +986,256 @@ export default function DistributorJourneyPage() {
           </p>
         )}
       </div>
+
+      <section className="rounded-xl border border-slate-800 bg-[#111827] p-4">
+        <h2 className="font-semibold">Bằng chứng điểm đo IoT</h2>
+        <p className="mt-2 text-sm text-slate-400">
+          Chọn một điểm để BE đọc dữ liệu đã lưu và xác minh chữ ký Ed25519
+          bằng khóa công khai gắn với record lúc ghi nhận.
+        </p>
+
+        {points.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-400">Chưa có điểm đo để kiểm tra.</p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {visibleEvidenceRows.map(({ point, pointNumber }) => (
+              <div key={point.recordKey ?? `${point.sequence}-${pointNumber}`}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-700 bg-[#0b1020] p-3">
+                <div className="min-w-0 text-sm">
+                  <p className="font-medium">
+                    Điểm #{pointNumber} · Xe #{point.vehicleId ?? "—"} · Sequence {point.sequence ?? "—"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {point.timestamp || "Chưa có thời điểm"} · {point.temperature ?? "—"}°C · {point.humidity ?? "—"}%
+                  </p>
+                  <p className="mt-1 break-all font-mono text-xs text-slate-500">
+                    {point.recordKey ?? "Chưa có record key"}
+                  </p>
+                </div>
+                <button type="button"
+                  disabled={!point.recordKey || evidenceLoading}
+                  onClick={() => openEvidence(point.recordKey)}
+                  className="rounded-lg border border-blue-500 px-3 py-2 text-sm text-blue-300 hover:bg-blue-500/10 disabled:opacity-40">
+                  Xem bằng chứng
+                </button>
+              </div>
+            ))}
+            <Pagination
+              page={currentEvidencePage}
+              totalPages={evidenceTotalPages}
+              onPageChange={setEvidencePage}
+            />
+          </div>
+        )}
+      </section>
+
+      {(batch?.status === "RECEIVED_BY_DISTRIBUTOR" ||
+        batch?.status === "IN_DISTRIBUTION") && (
+        <section className="rounded-xl border border-slate-800 bg-[#111827] p-4">
+          <h2 className="font-semibold">Thử giả mạo bản tin IoT</h2>
+          <p className="mt-2 text-sm text-slate-400">
+            BE tạo bản tin mẫu đã ký cho xe đang chọn. FE chỉ đổi nhiệt độ,
+            giữ nguyên chữ ký rồi gửi vào endpoint nhận TRANSPORT record để BE quyết định.
+            Khóa demo nằm ở BE; đây là dữ liệu mô phỏng, không chứng minh cảm biến vật lý đã đo.
+          </p>
+          <label className="mt-4 block max-w-lg text-sm text-slate-300">
+            Xe dùng để thử
+            <select value={vehicleId} disabled={preparingSignedRecord || attackBusy || demoRunning}
+              onChange={(event) => {
+                setVehicleId(event.target.value);
+                setSignedRequestText("");
+                setAttackStep("idle");
+                setAttackResults([]);
+                setAttackError("");
+              }}
+              className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2">
+              <option value="">Chọn xe</option>
+              {vehicles.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id} disabled={vehicle.demoBusy}>
+                  Xe #{vehicle.id} · {vehicle.vehiclePlate} · sequence cuối {vehicle.lastSequence ?? 0}
+                  {vehicle.demoBusy ? " · Đang bận" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          {selectedVehicle && (
+            <p className="mt-2 text-sm text-cyan-300">
+              Đang chọn xe #{selectedVehicle.id}: lastSequence = {selectedVehicle.lastSequence ?? 0};
+              bản tin mẫu kế tiếp sẽ dùng sequence {Number(selectedVehicle.lastSequence ?? 0) + 1}.
+              Sequence được tính riêng cho từng xe, kể cả khi xe đã chạy ở batch khác.
+            </p>
+          )}
+          <button type="button" onClick={prepareSignedRecord}
+            disabled={preparingSignedRecord || attackBusy || demoRunning || !selectedVehicle || selectedVehicle.demoBusy || routePositions.length === 0}
+            className="mt-4 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold disabled:opacity-40">
+            {preparingSignedRecord ? "Đang tạo..." : "Tạo bản tin mẫu đã ký"}
+          </button>
+          <label className="mt-4 block text-sm text-slate-300">
+            Bản tin gốc do BE tạo (không cần dán JSON)
+            <textarea
+              rows={8}
+              spellCheck={false}
+              readOnly
+              value={signedRequestText}
+              placeholder="Bấm Tạo bản tin mẫu đã ký để BE điền JSON tại đây."
+              className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-3 font-mono text-xs text-slate-100 placeholder:text-slate-600"
+            />
+          </label>
+          <label className="mt-3 block text-sm text-slate-300">
+            Nhiệt độ giả mạo (°C)
+            <input
+              type="number"
+              step="any"
+              value={changedTemperature}
+              onChange={(event) => {
+                setChangedTemperature(event.target.value);
+                setAttackStep("idle");
+                setAttackResults([]);
+                setAttackError("");
+              }}
+              placeholder="Ví dụ: 25"
+              className="mt-1 w-full max-w-52 rounded-lg border border-slate-600 bg-[#0b1020] p-2"
+            />
+          </label>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" onClick={() => testSignedRequest("forged")}
+              disabled={attackBusy || preparingSignedRecord || demoRunning || !signedRequestText || attackStep !== "idle"}
+              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold disabled:opacity-40">
+              1. Gửi bản đã sửa
+            </button>
+            <button type="button" onClick={() => testSignedRequest("original")}
+              disabled={attackBusy || demoRunning || attackStep !== "forgedRejected"}
+              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold disabled:opacity-40">
+              2. Gửi bản gốc đối chứng
+            </button>
+            <button type="button" onClick={() => testSignedRequest("replay")}
+              disabled={attackBusy || demoRunning || attackStep !== "originalAccepted"}
+              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold disabled:opacity-40">
+              3. Phát lại bản gốc
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-amber-300">
+            Bước 2 tạo một TRANSPORT record thật và tăng sequence của xe. Chỉ thử trên lô demo.
+          </p>
+          {attackBusy && <p className="mt-3 text-sm text-slate-400">Đang đợi phản hồi từ BE...</p>}
+          {attackError && (
+            <p className="mt-3 rounded-lg bg-red-500/10 p-3 text-sm text-red-300">{attackError}</p>
+          )}
+          {attackResults.length > 0 && (
+            <ol className="mt-4 space-y-2 text-sm">
+              {attackResults.map((result, index) => (
+                <li key={index} className={`rounded-lg p-3 ${result.expected
+                  ? "bg-emerald-500/10 text-emerald-200"
+                  : "bg-red-500/10 text-red-200"}`}>
+                  <strong>{result.mode === "forged" ? "Bản sửa nhiệt độ"
+                    : result.mode === "original" ? "Bản gốc" : "Phát lại"}: HTTP {result.status}</strong>
+                  <p className="mt-1 break-words">BE: {result.message}</p>
+                  <p>Sequence xe: {result.beforeSequence} → {result.afterSequence}</p>
+                  {!result.expected && <p>Chưa đạt kết quả mong đợi; kiểm tra phản hồi BE.</p>}
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      )}
+
+      {selectedEvidenceKey && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !evidenceLoading) closeEvidence();
+          }}>
+          <section role="dialog" aria-modal="true" aria-label="Bằng chứng điểm đo IoT"
+            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-700 bg-[#111827] p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="font-semibold">Bằng chứng của record</h3>
+                <p className="mt-1 break-all font-mono text-xs text-slate-400">
+                  {selectedEvidenceKey}
+                </p>
+              </div>
+              <button type="button" onClick={closeEvidence}
+                disabled={evidenceLoading}
+                className="text-sm text-slate-400 hover:text-white disabled:opacity-40">
+                Đóng
+              </button>
+            </div>
+
+            {evidenceLoading && (
+              <p className="mt-4 text-sm text-slate-400">Đang tải và xác minh chữ ký...</p>
+            )}
+            {evidenceError && (
+              <p className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-300">
+                {evidenceError}
+              </p>
+            )}
+            {evidence && (
+              <div className="mt-4 space-y-4 text-sm">
+                <div className={`rounded-lg p-4 ${
+                  evidence.signatureValid === true
+                    ? "bg-emerald-500/10 text-emerald-300"
+                    : evidence.signatureValid === false
+                      ? "bg-red-500/10 text-red-300"
+                      : "bg-amber-500/10 text-amber-300"
+                }`}>
+                  <strong>
+                    {evidence.signatureValid === true
+                      ? "Chữ ký Ed25519 hợp lệ"
+                      : evidence.signatureValid === false
+                        ? "Chữ ký Ed25519 không hợp lệ"
+                        : "BE chưa trả kết quả xác minh chữ ký"}
+                  </strong>
+                  <p className="mt-1 text-xs">
+                    Kết quả này xác minh dữ liệu khớp với khóa demo đã đăng ký;
+                    không chứng minh cảm biến vật lý đã tự tạo số đo.
+                  </p>
+                </div>
+
+                <dl className="grid gap-3 sm:grid-cols-2">
+                  <div><dt className="text-slate-400">Xe / thiết bị</dt>
+                    <dd>{evidence.vehicleId ?? "—"} / {evidence.deviceId ?? "—"}</dd></div>
+                  <div><dt className="text-slate-400">Sequence</dt>
+                    <dd>{evidence.sequence ?? "—"}</dd></div>
+                  <div><dt className="text-slate-400">Thời điểm đo</dt>
+                    <dd>{evidence.timestamp ?? "—"}</dd></div>
+                  <div><dt className="text-slate-400">Vân tay khóa công khai</dt>
+                    <dd className="break-all font-mono text-xs">
+                      {evidence.publicKeyFingerprint ?? evidence.devicePublicKeyFingerprint ?? "—"}
+                    </dd></div>
+                </dl>
+
+                {(evidence.devicePublicKeyAtSigning || evidence.deviceSignature) && (
+                  <div className="space-y-2 rounded-lg border border-slate-700 p-3 text-xs">
+                    {evidence.devicePublicKeyAtSigning && (
+                      <p>
+                        <span className="text-slate-400">Public key tại thời điểm ký: </span>
+                        <span className="break-all font-mono">
+                          {evidence.devicePublicKeyAtSigning}
+                        </span>
+                      </p>
+                    )}
+                    {evidence.deviceSignature && (
+                      <p>
+                        <span className="text-slate-400">Chữ ký (Base64): </span>
+                        <span className="break-all font-mono">
+                          {evidence.deviceSignature}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <details className="rounded-lg border border-slate-700 p-3">
+                  <summary className="cursor-pointer font-medium">Dữ liệu bằng chứng BE trả về</summary>
+                  <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs text-slate-300">
+                    {JSON.stringify(evidence, null, 2)}
+                  </pre>
+                </details>
+
+              </div>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }

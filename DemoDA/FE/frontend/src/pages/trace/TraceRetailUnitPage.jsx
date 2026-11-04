@@ -171,34 +171,46 @@ export default function TraceRetailUnitPage() {
     };
   }, [retailCode]);
 
-  async function verifyOnChain() {
-    if (!canVerify || !unit?.batchId || !unit?.retailRecordKey) return;
+async function verifyOnChain() {
+  if (!canVerify || !unit?.batchId || !unit?.retailRecordKey) return;
 
-    const token = localStorage.getItem("token");
-    if (!token) {
-      setVerifyError("Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.");
-      return;
-    }
-
-    setVerifying(true);
-    setVerifyError("");
-    setVerification(null);
-
-    try {
-      const result = await getJson(
-        `${API_BASE}/verify/batches/${unit.batchId}` +
-        `/records/${encodeURIComponent(unit.retailRecordKey)}` +
-        `/verify-on-chain`,
-        token
-      );
-
-      setVerification(result);
-    } catch (err) {
-      setVerifyError(err.message);
-    } finally {
-      setVerifying(false);
-    }
+  const token = localStorage.getItem("token");
+  if (!token) {
+    setVerifyError("Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.");
+    return;
   }
+
+  setVerifying(true);
+  setVerifyError("");
+  setVerification(null);
+
+  try {
+    const url =
+      `${API_BASE}/verify/batches/${unit.batchId}` +
+      `/records/${encodeURIComponent(unit.retailRecordKey)}` +
+      `/verify-on-chain`;
+
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const result = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(
+        result?.message ?? `Xác minh thất bại (HTTP ${response.status}).`
+      );
+    }
+
+    setVerification(result);
+  } catch (err) {
+    setVerifyError(err.message);
+  } finally {
+    setVerifying(false);
+  }
+}
 
   function goBack() {
     const role = (localStorage.getItem("role") || "").replace(/^ROLE_/, "");

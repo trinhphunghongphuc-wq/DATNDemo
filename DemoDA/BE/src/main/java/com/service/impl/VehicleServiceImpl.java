@@ -17,6 +17,7 @@ import java.util.List;
 public class VehicleServiceImpl implements VehicleService {
 
     private final VehicleRepository vehicleRepository;
+    private final DemoVehicleRunRegistry demoVehicleRunRegistry;
 
     @Override
     public List<VehicleResponse> getMyVehicles(Long distributorId) {
@@ -64,6 +65,7 @@ public class VehicleServiceImpl implements VehicleService {
                 .distributorId(vehicle.getDistributorId())
                 .active(vehicle.getActive())
                 .lastSequence(vehicle.getLastSequence())
+                .demoBusy(demoVehicleRunRegistry.isBusy(vehicle.getId()))
                 .build();
     }
 }

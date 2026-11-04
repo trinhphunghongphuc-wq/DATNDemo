@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict OaNj2YNoVzvKG86WSfbqnaueQ5ipcFJxQ4jJeD6R3746Dr4SwnScSZZY7ZgbPkX
+
 
 -- Dumped from database version 16.14 (Debian 16.14-1.pgdg13+1)
 -- Dumped by pg_dump version 16.14 (Debian 16.14-1.pgdg13+1)
@@ -629,5 +629,5 @@ ALTER TABLE ONLY public.producer_partners
 -- PostgreSQL database dump complete
 --
 
-\unrestrict OaNj2YNoVzvKG86WSfbqnaueQ5ipcFJxQ4jJeD6R3746Dr4SwnScSZZY7ZgbPkX
+
 

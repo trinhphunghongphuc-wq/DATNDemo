@@ -49,10 +49,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/batches/**").hasAnyRole("ADMIN", "PRODUCER", "DISTRIBUTOR", "RETAILER")
                         .requestMatchers("/api/records/**").hasAnyRole("ADMIN", "PRODUCER", "DISTRIBUTOR", "RETAILER")
 
-                        .requestMatchers(
-                                HttpMethod.GET,
-                                "/api/verify/batches/*/records/*/verify-on-chain"
-                        ).permitAll()
+
                         .requestMatchers("/api/verify/**").hasRole("RETAILER")
                         .anyRequest().authenticated()
                 )
