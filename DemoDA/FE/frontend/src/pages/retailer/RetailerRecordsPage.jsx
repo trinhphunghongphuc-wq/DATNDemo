@@ -40,6 +40,7 @@ export default function RetailerRecordsPage() {
     packageWeight: "",
     packageQuantity: "",
     pricePerPackage: "",
+    storageInstructions: "",
   });
 
   const loadBatch = useCallback(async () => {
@@ -245,6 +246,13 @@ export default function RetailerRecordsPage() {
             allocatedWeight: Number(unitForm.allocatedWeight),
             pricePerKg: Number(unitForm.pricePerKg),
           };
+      const storageInstructions = unitForm.storageInstructions.trim();
+
+      if (!storageInstructions) {
+        throw new Error("Vui lòng nhập cách bảo quản cho đơn vị bán lẻ.");
+      }
+
+      payload.storageInstructions = storageInstructions;
 
       if (
         !productName ||
@@ -301,6 +309,7 @@ export default function RetailerRecordsPage() {
         packageWeight: "",
         packageQuantity: "",
         pricePerPackage: "",
+        storageInstructions: "",
       });
 
       setWithInitialStorage(false);
@@ -437,28 +446,28 @@ export default function RetailerRecordsPage() {
 
       {batch?.status === "AT_RETAIL" && (
         !batch.retailerRecordingClosed && (
-        <form onSubmit={addRetailRecord} className="space-y-3 rounded-xl border border-slate-800 bg-[#111827] p-4">
-          <h2 className="font-semibold">Ghi RETAIL record</h2>
-          <p className="text-sm text-slate-400">Ghi nhận kiểm tra lô tại điểm bán. Hoàn tất mọi record Retailer trước khi Admin anchor stage này.</p>
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="text-sm">Điểm bán / nơi nhận
-              <input required value={form.location} onChange={(e) => setForm((old) => ({ ...old, location: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2" />
+          <form onSubmit={addRetailRecord} className="space-y-3 rounded-xl border border-slate-800 bg-[#111827] p-4">
+            <h2 className="font-semibold">Ghi RETAIL record</h2>
+            <p className="text-sm text-slate-400">Ghi nhận kiểm tra lô tại điểm bán. Hoàn tất mọi record Retailer trước khi Admin anchor stage này.</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-sm">Điểm bán / nơi nhận
+                <input required value={form.location} onChange={(e) => setForm((old) => ({ ...old, location: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2" />
+              </label>
+              <label className="text-sm">Tình trạng nhận hàng
+                <select value={form.condition} onChange={(e) => setForm((old) => ({ ...old, condition: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2">
+                  <option value="GOOD">Đạt</option>
+                  <option value="OBSERVATION">Cần theo dõi</option>
+                </select>
+              </label>
+            </div>
+            <label className="block text-sm">Ghi chú
+              <textarea rows={3} value={form.note} onChange={(e) => setForm((old) => ({ ...old, note: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2" />
             </label>
-            <label className="text-sm">Tình trạng nhận hàng
-              <select value={form.condition} onChange={(e) => setForm((old) => ({ ...old, condition: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2">
-                <option value="GOOD">Đạt</option>
-                <option value="OBSERVATION">Cần theo dõi</option>
-              </select>
-            </label>
-          </div>
-          <label className="block text-sm">Ghi chú
-            <textarea rows={3} value={form.note} onChange={(e) => setForm((old) => ({ ...old, note: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2" />
-          </label>
-          <button type="submit" disabled={busy} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold disabled:opacity-40">
-            {busy ? "Đang lưu..." : "Lưu RETAIL record"}
-          </button>
-        </form>
-      ))}
+            <button type="submit" disabled={busy} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold disabled:opacity-40">
+              {busy ? "Đang lưu..." : "Lưu RETAIL record"}
+            </button>
+          </form>
+        ))}
 
 
 
@@ -504,6 +513,24 @@ export default function RetailerRecordsPage() {
                 <option value="BULK">Bán theo kg</option>
                 <option value="PACKAGED">Đóng gói</option>
               </select>
+
+              <label className="block text-sm">
+                Cách bảo quản *
+                <textarea
+                  required
+                  maxLength={500}
+                  rows={3}
+                  value={unitForm.storageInstructions}
+                  onChange={(e) =>
+                    setUnitForm((old) => ({
+                      ...old,
+                      storageInstructions: e.target.value,
+                    }))
+                  }
+                  placeholder="Ví dụ: Bảo quản lạnh, tránh ánh nắng trực tiếp."
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2"
+                />
+              </label>
 
               {unitForm.type === "BULK" ? (
                 <>

@@ -156,14 +156,7 @@ public class DistributorServiceImpl implements DistributorService {
 
         long expectedSequence = lastSequence + 1L;
 
-        if (!request.getSequence().equals(expectedSequence)) {
-            throw new IllegalArgumentException(
-                    "Invalid device sequence. Expected "
-                            + expectedSequence
-                            + " but received "
-                            + request.getSequence()
-            );
-        }
+
 
         try {
             /*
@@ -203,6 +196,15 @@ public class DistributorServiceImpl implements DistributorService {
             if (!signatureValid) {
                 throw new IllegalArgumentException(
                         "Invalid device signature"
+                );
+            }
+
+            if (!request.getSequence().equals(expectedSequence)) {
+                throw new IllegalArgumentException(
+                        "Invalid device sequence. Expected "
+                                + expectedSequence
+                                + " but received "
+                                + request.getSequence()
                 );
             }
 

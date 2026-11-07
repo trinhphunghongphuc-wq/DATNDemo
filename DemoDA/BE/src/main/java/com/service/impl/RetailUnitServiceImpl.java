@@ -4,15 +4,15 @@ package com.service.impl;
 
 import com.dto.record.RecordItemResponse;
 import com.dto.record.RecordRequest;
-import com.dto.user.retailer.RetailStorageReadingRequest;
+import com.dto.user.retailer.*;
 import com.entity.Record;
-import com.dto.user.retailer.CreateRetailUnitRequest;
-import com.dto.user.retailer.RetailUnitResponse;
 import com.entity.Batch;
 import com.entity.RetailUnit;
+import com.entity.RetailUnitPriceHistory;
 import com.enums.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.repository.BatchRepository;
+import com.repository.RetailUnitPriceHistoryRepository;
 import com.repository.RetailUnitRepository;
 import com.service.RecordService;
 import com.service.RetailUnitService;
@@ -23,6 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.enums.RecordType;
 import com.enums.Role;
+
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.time.LocalDateTime;
@@ -37,6 +40,8 @@ public class RetailUnitServiceImpl implements RetailUnitService {
 
     private final RecordService recordService;
     private final ObjectMapper objectMapper;
+
+    private final RetailUnitPriceHistoryRepository priceHistoryRepository;
 
     @Override
     @Transactional
@@ -76,6 +81,14 @@ public class RetailUnitServiceImpl implements RetailUnitService {
             );
         }
 
+        String storageInstructions = request.getStorageInstructions() == null
+                ? ""
+                : request.getStorageInstructions().trim();
+
+        if (storageInstructions.isBlank()) {
+            throw new IllegalArgumentException("Vui lòng nhập cách bảo quản");
+        }
+
         validateRetailUnitRequest(request);
 
         String retailCode = generateRetailCode();
@@ -96,12 +109,21 @@ public class RetailUnitServiceImpl implements RetailUnitService {
                 .retailerId(retailerId)
                 .batch(batch)
                 .createdAt(LocalDateTime.now())
+                .storageInstructions(storageInstructions)
                 .build();
 
         RetailUnit savedRetailUnit = retailUnitRepository.save(retailUnit);
 
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("eventType", "RETAIL_UNIT_CREATED");
+        event.put("initialPrice",
+                savedRetailUnit.getType() == RetailUnitType.PACKAGED
+                        ? savedRetailUnit.getPricePerPackage()
+                        : savedRetailUnit.getPricePerKg());
+        event.put("priceUnit",
+                savedRetailUnit.getType() == RetailUnitType.PACKAGED
+                        ? "VND_PER_PACKAGE"
+                        : "VND_PER_KG");
         event.put("batchId", batch.getId());
         event.put("retailCode", savedRetailUnit.getRetailCode());
         event.put("retailerId", retailerId);
@@ -257,6 +279,108 @@ public class RetailUnitServiceImpl implements RetailUnitService {
                 .build();
     }
 
+    @Override
+    @Transactional
+    public RetailUnitResponse updatePrice(
+            Long retailUnitId,
+            Long retailerId,
+            UpdateRetailUnitPriceRequest request
+    ) {
+        RetailUnit unit = retailUnitRepository
+                .findByIdForPriceUpdate(retailUnitId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException("Retail unit not found"));
+
+        if (!Objects.equals(unit.getRetailerId(), retailerId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Retail unit does not belong to this retailer"
+            );
+        }
+
+        if (unit.getStatus() == RetailUnitStatus.SOLD_OUT) {
+            throw new IllegalStateException(
+                    "Cannot change price of a sold-out retail unit"
+            );
+        }
+
+        BigDecimal newPrice = request.price();
+
+        if (newPrice == null
+                || newPrice.signum() <= 0
+                || newPrice.scale() > 2
+                || newPrice.compareTo(new BigDecimal("9999999999999.99")) > 0) {
+            throw new IllegalArgumentException(
+                    "Giá phải lớn hơn 0 và có tối đa 2 chữ số thập phân"
+            );
+        }
+
+        Double currentPrice = unit.getType() == RetailUnitType.PACKAGED
+                ? unit.getPricePerPackage()
+                : unit.getPricePerKg();
+
+        if (currentPrice == null) {
+            throw new IllegalStateException(
+                    "Retail unit has no current price"
+            );
+        }
+
+        BigDecimal oldPrice = BigDecimal.valueOf(currentPrice);
+
+        if (oldPrice.compareTo(newPrice) == 0) {
+            throw new IllegalArgumentException(
+                    "Giá mới phải khác giá hiện tại"
+            );
+        }
+
+        Instant changedAt = Instant.now();
+
+        if (unit.getType() == RetailUnitType.PACKAGED) {
+            unit.setPricePerPackage(newPrice.doubleValue());
+        } else {
+            unit.setPricePerKg(newPrice.doubleValue());
+        }
+        unit.setPriceUpdatedAt(changedAt);
+
+        priceHistoryRepository.save(
+                RetailUnitPriceHistory.builder()
+                        .retailUnit(unit)
+                        .retailerId(retailerId)
+                        .oldPrice(oldPrice)
+                        .newPrice(newPrice)
+                        .changedAt(changedAt)
+                        .build()
+        );
+
+        return toResponse(unit);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<RetailUnitPriceHistoryResponse> getPriceHistory(
+            Long retailUnitId,
+            Long retailerId
+    ) {
+        RetailUnit unit = retailUnitRepository.findById(retailUnitId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException("Retail unit not found"));
+
+        if (!Objects.equals(unit.getRetailerId(), retailerId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Retail unit does not belong to this retailer"
+            );
+        }
+
+        return priceHistoryRepository
+                .findByRetailUnit_IdOrderByChangedAtDesc(retailUnitId)
+                .stream()
+                .map(item -> new RetailUnitPriceHistoryResponse(
+                        item.getOldPrice(),
+                        item.getNewPrice(),
+                        item.getChangedAt()
+                ))
+                .toList();
+    }
+
     private Batch getBatchForRetailer(Long batchId, Long retailerId) {
         Batch batch = batchRepository.findById(batchId)
                 .orElseThrow(() -> new RuntimeException("Batch not found with id: " + batchId));
@@ -334,6 +458,7 @@ public class RetailUnitServiceImpl implements RetailUnitService {
                 .retailerRecordingClosed(
                         retailUnit.getBatch().isRetailerRecordingClosed()
                 )
+                .priceUpdatedAt(retailUnit.getPriceUpdatedAt())
                 .build();
     }
 }

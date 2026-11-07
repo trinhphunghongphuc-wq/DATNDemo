@@ -171,46 +171,46 @@ export default function TraceRetailUnitPage() {
     };
   }, [retailCode]);
 
-async function verifyOnChain() {
-  if (!canVerify || !unit?.batchId || !unit?.retailRecordKey) return;
+  async function verifyOnChain() {
+    if (!canVerify || !unit?.batchId || !unit?.retailRecordKey) return;
 
-  const token = localStorage.getItem("token");
-  if (!token) {
-    setVerifyError("Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.");
-    return;
-  }
-
-  setVerifying(true);
-  setVerifyError("");
-  setVerification(null);
-
-  try {
-    const url =
-      `${API_BASE}/verify/batches/${unit.batchId}` +
-      `/records/${encodeURIComponent(unit.retailRecordKey)}` +
-      `/verify-on-chain`;
-
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    const result = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      throw new Error(
-        result?.message ?? `Xác minh thất bại (HTTP ${response.status}).`
-      );
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setVerifyError("Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.");
+      return;
     }
 
-    setVerification(result);
-  } catch (err) {
-    setVerifyError(err.message);
-  } finally {
-    setVerifying(false);
+    setVerifying(true);
+    setVerifyError("");
+    setVerification(null);
+
+    try {
+      const url =
+        `${API_BASE}/verify/batches/${unit.batchId}` +
+        `/records/${encodeURIComponent(unit.retailRecordKey)}` +
+        `/verify-on-chain`;
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          result?.message ?? `Xác minh thất bại (HTTP ${response.status}).`
+        );
+      }
+
+      setVerification(result);
+    } catch (err) {
+      setVerifyError(err.message);
+    } finally {
+      setVerifying(false);
+    }
   }
-}
 
   function goBack() {
     const role = (localStorage.getItem("role") || "").replace(/^ROLE_/, "");
@@ -297,6 +297,13 @@ async function verifyOnChain() {
               }
             />
           </dl>
+        </section>
+
+        <section className="rounded-2xl bg-white p-6 shadow">
+          <h2 className="text-lg font-bold">Cách bảo quản</h2>
+          <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">
+            {unit.storageInstructions || "Chưa có hướng dẫn bảo quản."}
+          </p>
         </section>
 
         <MeasuredConditions
@@ -404,8 +411,8 @@ async function verifyOnChain() {
                 {verification && (
                   <div
                     className={`mt-4 rounded-lg p-4 ${verification.valid
-                        ? "bg-emerald-50 text-emerald-800"
-                        : "bg-red-50 text-red-800"
+                      ? "bg-emerald-50 text-emerald-800"
+                      : "bg-red-50 text-red-800"
                       }`}
                   >
                     <p className="font-bold">

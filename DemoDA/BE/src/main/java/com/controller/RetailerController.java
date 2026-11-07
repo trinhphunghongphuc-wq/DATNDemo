@@ -5,8 +5,7 @@ import com.dto.batch.BatchDetailResponse;
 import com.dto.record.RecordItemResponse;
 import com.dto.record.RecordRequest;
 import com.dto.user.producer.RejectDeliveryRequest;
-import com.dto.user.retailer.CreateRetailUnitRequest;
-import com.dto.user.retailer.RetailUnitResponse;
+import com.dto.user.retailer.*;
 import com.dto.verify.VerifyAllResponse;
 import com.security.CustomUserDetails;
 import com.service.RetailerService;
@@ -25,7 +24,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
-import com.dto.user.retailer.RetailStorageReadingRequest;
 
 @RestController
 @RequestMapping("/api/retailer")
@@ -214,6 +212,29 @@ public class RetailerController {
         Long retailerId = getCurrentUserId(authentication);
         return ResponseEntity.ok(
                 retailerService.closeRecording(batchId, retailerId)
+        );
+    }
+
+    @PutMapping("/retail-units/{retailUnitId}/price")
+    public ResponseEntity<RetailUnitResponse> updateRetailUnitPrice(
+            @PathVariable Long retailUnitId,
+            @Valid @RequestBody UpdateRetailUnitPriceRequest request,
+            Authentication authentication
+    ) {
+        Long retailerId = getCurrentUserId(authentication);
+        return ResponseEntity.ok(
+                retailUnitService.updatePrice(retailUnitId, retailerId, request)
+        );
+    }
+
+    @GetMapping("/retail-units/{retailUnitId}/price-history")
+    public ResponseEntity<List<RetailUnitPriceHistoryResponse>> getPriceHistory(
+            @PathVariable Long retailUnitId,
+            Authentication authentication
+    ) {
+        Long retailerId = getCurrentUserId(authentication);
+        return ResponseEntity.ok(
+                retailUnitService.getPriceHistory(retailUnitId, retailerId)
         );
     }
 }

@@ -5,6 +5,7 @@ import com.enums.RetailUnitType;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -60,4 +61,10 @@ public class RetailUnit {
 
     @Column(name = "retail_record_key", length = 100)
     private String retailRecordKey;
+
+    @Column(name = "storage_instructions", length = 500)
+    private String storageInstructions;
+
+    @Column(name = "price_updated_at")
+    private Instant priceUpdatedAt;
 }

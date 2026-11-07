@@ -28,32 +28,61 @@ public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http)
+            throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session ->
-                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                        session.sessionCreationPolicy(
+                                SessionCreationPolicy.STATELESS
+                        )
                 )
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(
+                        (request, response, authException) -> {
+                            response.setStatus(401);
+                            response.setContentType(
+                                    "application/json;charset=UTF-8"
+                            );
+                            response.getWriter().write(
+                                    "{\"message\":\"Phiên đăng nhập đã hết hạn hoặc không hợp lệ.\"}"
+                            );
+                        }
+                ))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
                         .requestMatchers("/api/auth/**").permitAll()
 
                         .requestMatchers("/api/dashboard/**").hasRole("ADMIN")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
-                        .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/traceability/**").permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET, "/api/products/**"
+                        ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET, "/api/traceability/**"
+                        ).permitAll()
 
-                        .requestMatchers("/api/batches/**").hasAnyRole("ADMIN", "PRODUCER", "DISTRIBUTOR", "RETAILER")
-                        .requestMatchers("/api/records/**").hasAnyRole("ADMIN", "PRODUCER", "DISTRIBUTOR", "RETAILER")
+                        .requestMatchers("/api/batches/**")
+                        .hasAnyRole(
+                                "ADMIN", "PRODUCER",
+                                "DISTRIBUTOR", "RETAILER"
+                        )
+                        .requestMatchers("/api/records/**")
+                        .hasAnyRole(
+                                "ADMIN", "PRODUCER",
+                                "DISTRIBUTOR", "RETAILER"
+                        )
 
+                        .requestMatchers("/api/verify/**")
+                        .hasRole("RETAILER")
 
-                        .requestMatchers("/api/verify/**").hasRole("RETAILER")
                         .anyRequest().authenticated()
                 )
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(
+                        jwtAuthFilter,
+                        UsernamePasswordAuthenticationFilter.class
+                );
 
         return http.build();
     }
@@ -66,17 +95,14 @@ public class SecurityConfig {
                 "http://localhost:5173",
                 "http://localhost:3000"
         ));
-
         config.setAllowedMethods(List.of(
                 "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"
         ));
-
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source =
                 new UrlBasedCorsConfigurationSource();
-
         source.registerCorsConfiguration("/**", config);
         return source;
     }
@@ -87,7 +113,9 @@ public class SecurityConfig {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
+    public AuthenticationManager authenticationManager(
+            AuthenticationConfiguration config
+    ) throws Exception {
         return config.getAuthenticationManager();
     }
 }

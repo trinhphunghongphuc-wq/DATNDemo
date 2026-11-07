@@ -135,7 +135,8 @@ public class ProductServiceImpl implements ProductService {
                 batch.getMerkleRoot(),
                 batch.getChainTxHash(),
                 resolveStatus(batch),
-                steps
+                steps,
+                batch.getExpiryDate()
         );
     }
 
@@ -201,6 +202,10 @@ public class ProductServiceImpl implements ProductService {
                 unit.getExpiryDate() != null
                         ? unit.getExpiryDate()
                         : batch.getExpiryDate(),
+                unit.getStorageInstructions(),
+                unit.getPricePerKg(),
+                unit.getPricePerPackage(),
+                unit.getPriceUpdatedAt(),
                 batch.getBatchCode(),
                 batch.getId(),
                 unit.getRetailRecordKey(),
@@ -214,6 +219,7 @@ public class ProductServiceImpl implements ProductService {
                 summarizeRetailStorage(batch, records, unit, category)
         );
     }
+
 
     private RetailUnitTraceResponse.RetailStorageConditions summarizeRetailStorage(
             Batch batch,

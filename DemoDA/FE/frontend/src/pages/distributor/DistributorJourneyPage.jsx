@@ -26,6 +26,7 @@ function PlaceInput({ label, placeholder, selected, onSelect }) {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
 
+
   useEffect(() => {
     if (selected || query.trim().length < 3 || !mapTilerKey) {
       return;
@@ -237,6 +238,10 @@ export default function DistributorJourneyPage() {
   const [demoStarting, setDemoStarting] = useState(false);
   const demoRunning = demoRun?.status === "RUNNING" ||
     demoRun?.status === "STOPPING";
+
+  const demoCompleted =
+    Number(demoRun?.totalPoints) > 0 &&
+    Number(demoRun?.sentPoints) >= Number(demoRun?.totalPoints);
   const [warehouse, setWarehouse] = useState({
     location: "",
     temperature: "",
@@ -265,6 +270,8 @@ export default function DistributorJourneyPage() {
   const [attackStep, setAttackStep] = useState("idle");
   const [attackResults, setAttackResults] = useState([]);
   const [attackError, setAttackError] = useState("");
+
+  const [selectedAttackRecordKey, setSelectedAttackRecordKey] = useState(null);
 
   const loadJourney = useCallback(async () => {
     const response = await getTransportJourney(batchId);
@@ -296,7 +303,7 @@ export default function DistributorJourneyPage() {
           setVehicleId((current) => String(
             runResponse.data?.vehicleId ??
             (current || vehiclesResponse.data?.find((vehicle) => !vehicle.demoBusy)?.id ||
-            vehiclesResponse.data?.[0]?.id || "")
+              vehiclesResponse.data?.[0]?.id || "")
           ));
         }
       } catch (err) {
@@ -397,42 +404,45 @@ export default function DistributorJourneyPage() {
     setEvidenceError("");
   }
 
-  async function prepareSignedRecord() {
-    if (vehicles.some((vehicle) => Number(vehicle.id) === Number(vehicleId) && vehicle.demoBusy)) {
-      setAttackError("Xe đang chạy phiên demo khác. Hãy chọn xe rảnh.");
-      return;
-    }
-    const firstPosition = routePositions[0];
-    const gps = latestPoint
-      ? `${latestPoint.latitude},${latestPoint.longitude}`
-      : firstPosition ? `${firstPosition[0]},${firstPosition[1]}` : null;
-    if (!vehicleId || !gps) {
-      setAttackError("Chọn xe và lập tuyến trước khi tạo bản tin mẫu.");
-      return;
-    }
-    setPreparingSignedRecord(true);
+  async function selectSignedPoint(point) {
+    if (!point?.recordKey) return;
+
     setAttackError("");
+    setNotice("");
     setAttackResults([]);
     setAttackStep("idle");
+    setSignedRequestText("");
+    setSelectedAttackRecordKey(null);
+    setPreparingSignedRecord(true);
+
     try {
-      const temperature = demoTemperature.trim() !== ""
-        ? Number(demoTemperature) : Number(latestPoint?.temperature ?? 12);
-      const humidity = demoHumidity.trim() !== ""
-        ? Number(demoHumidity) : Number(latestPoint?.humidity ?? 90);
-      if (!Number.isFinite(temperature) || !Number.isFinite(humidity)
-          || humidity < 0 || humidity > 100) {
-        throw new Error("Nhiệt độ hoặc độ ẩm mẫu không hợp lệ.");
-      }
-      const { data } = await axiosClient.post(
-        `/distributor/batches/${batchId}/demo-signed-record`,
-        { vehicleId: Number(vehicleId), gps, temperature, humidity }
+      const { data } = await axiosClient.get(
+        `/distributor/batches/${batchId}/transport-records/` +
+        `${encodeURIComponent(point.recordKey)}/signed-request`
       );
+
+      if (
+        !data?.deviceSignature ||
+        data.vehicleId == null ||
+        data.sequence == null
+      ) {
+        throw new Error("BE trả về bản tin thiếu chữ ký, xe hoặc sequence.");
+      }
+
       setSignedRequestText(JSON.stringify(data, null, 2));
-      const { data: updatedVehicles } = await axiosClient.get("/distributor/vehicles");
-      setVehicles(updatedVehicles ?? []);
+      setSelectedAttackRecordKey(point.recordKey);
+      setVehicleId(String(data.vehicleId));
+      setNotice(
+        `Đã chọn điểm ${point.recordKey}. Xuống phần “Thử giả mạo bản tin IoT” để kiểm tra.`
+      );
     } catch (err) {
-      setSignedRequestText("");
-      setAttackError(err.response?.data?.message ?? err.message ?? "Không tạo được bản tin mẫu.");
+      const message =
+        err.response?.data?.message ??
+        err.message ??
+        "Không lấy được bản tin đã ký của điểm này.";
+
+      setAttackError(message);
+      setNotice("");
     } finally {
       setPreparingSignedRecord(false);
     }
@@ -450,27 +460,24 @@ export default function DistributorJourneyPage() {
     }
 
     if (!original || typeof original !== "object" ||
-        !Number.isInteger(Number(original.vehicleId)) ||
-        !Number.isInteger(Number(original.sequence)) ||
-        typeof original.deviceSignature !== "string" ||
-        !original.deviceSignature.trim() ||
-        !original.gps || !original.timestamp ||
-        original.temperature == null || original.humidity == null) {
+      !Number.isInteger(Number(original.vehicleId)) ||
+      !Number.isInteger(Number(original.sequence)) ||
+      typeof original.deviceSignature !== "string" ||
+      !original.deviceSignature.trim() ||
+      !original.gps || !original.timestamp ||
+      original.temperature == null || original.humidity == null) {
       setAttackError("JSON thiếu trường của transport record đã ký.");
       return;
     }
-    if (mode === "original" && attackStep !== "forgedRejected") {
-      setAttackError("Hãy gửi bản sửa và thấy BE từ chối chữ ký trước.");
-      return;
-    }
-    if (mode === "replay" && attackStep !== "originalAccepted") {
-      setAttackError("Hãy gửi bản gốc thành công trước khi thử phát lại.");
+    if (mode === "replay" && attackStep !== "forgedRejected") {
+      setAttackError("Hãy thử sửa nhiệt độ trước khi phát lại bản gốc.");
       return;
     }
 
+
     const newTemperature = Number(changedTemperature);
     if (mode === "forged" &&
-        (changedTemperature.trim() === "" ||
+      (changedTemperature.trim() === "" ||
         !Number.isFinite(newTemperature) ||
         newTemperature === Number(original.temperature))) {
       setAttackError("Nhiệt độ sửa phải khác nhiệt độ trong JSON đã ký.");
@@ -487,12 +494,7 @@ export default function DistributorJourneyPage() {
       if (vehicle.demoBusy) throw new Error("Xe đang bận chạy demo. Hãy đợi hoàn tất.");
 
       const beforeSequence = Number(vehicle.lastSequence ?? 0);
-      if (mode !== "replay" && Number(original.sequence) !== beforeSequence + 1) {
-        throw new Error(`BE đang đợi sequence ${beforeSequence + 1}; JSON có ${original.sequence}.`);
-      }
-      if (mode === "replay" && Number(original.sequence) !== beforeSequence) {
-        throw new Error("JSON không còn là bản tin vừa được BE chấp nhận.");
-      }
+
 
       const body = mode === "forged"
         ? { ...original, temperature: newTemperature }
@@ -518,23 +520,20 @@ export default function DistributorJourneyPage() {
           ?.lastSequence ?? 0
       );
       const expected = mode === "forged"
-        ? /invalid device signature/i.test(message) && afterSequence === beforeSequence
-        : mode === "original"
-          ? status >= 200 && status < 300 && afterSequence === beforeSequence + 1
-          : /invalid device sequence/i.test(message) && afterSequence === beforeSequence;
+        ? /invalid device signature/i.test(message) &&
+        afterSequence === beforeSequence
+        : /invalid device sequence/i.test(message) &&
+        afterSequence === beforeSequence;
 
       setAttackResults((previous) => [
         ...previous,
         { mode, expected, status, message, beforeSequence, afterSequence },
       ]);
+
       if (expected) {
-        setAttackStep(mode === "forged" ? "forgedRejected"
-          : mode === "original" ? "originalAccepted" : "replayRejected");
-      }
-      if (status >= 200 && status < 300) {
-        await loadJourney();
-        const response = await getDistributorBatchDetail(batchId);
-        setBatch(response.data);
+        setAttackStep(
+          mode === "forged" ? "forgedRejected" : "replayRejected"
+        );
       }
     } catch (err) {
       setAttackError(err.response?.data?.message ?? err.message ?? "Không chạy được phép thử.");
@@ -617,7 +616,7 @@ export default function DistributorJourneyPage() {
     Math.abs(Number(latestPoint.longitude) - destinationPosition[1]) < 0.003);
 
   async function handleStartDemo() {
-    if (demoRunning || demoStarting) return;
+    if (demoRunning || demoStarting || demoCompleted) return;
     const count = Number(demoCount);
     const temperature = Number(demoTemperature);
     const humidity = Number(demoHumidity);
@@ -888,10 +887,19 @@ export default function DistributorJourneyPage() {
                 {demoRun?.status === "STOPPING" ? "Đang dừng..." : "Dừng demo"}
               </button>
             ) : (
-              <button type="button" onClick={handleStartDemo} disabled={!demoStatusLoaded || demoStarting}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold disabled:opacity-40">
-                {!demoStatusLoaded ? "Đang kiểm tra phiên..." :
-                  demoStarting ? "Đang bắt đầu..." : "Bắt đầu demo"}
+              <button
+                type="button"
+                onClick={handleStartDemo}
+                disabled={!demoStatusLoaded || demoStarting || demoCompleted}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {!demoStatusLoaded
+                  ? "Đang kiểm tra phiên..."
+                  : demoStarting
+                    ? "Đang bắt đầu..."
+                    : demoCompleted
+                      ? "Đã hoàn tất demo"
+                      : "Bắt đầu demo"}
               </button>
             )}
             <span className="text-sm text-slate-400">
@@ -1018,6 +1026,14 @@ export default function DistributorJourneyPage() {
                   className="rounded-lg border border-blue-500 px-3 py-2 text-sm text-blue-300 hover:bg-blue-500/10 disabled:opacity-40">
                   Xem bằng chứng
                 </button>
+                <button
+                  type="button"
+                  disabled={!point.recordKey || preparingSignedRecord || demoRunning}
+                  onClick={() => selectSignedPoint(point)}
+                  className="rounded-lg border border-indigo-500 px-3 py-2 text-sm text-indigo-300"
+                >
+                  Dùng điểm này để thử tấn công
+                </button>
               </div>
             ))}
             <Pagination
@@ -1031,113 +1047,137 @@ export default function DistributorJourneyPage() {
 
       {(batch?.status === "RECEIVED_BY_DISTRIBUTOR" ||
         batch?.status === "IN_DISTRIBUTION") && (
-        <section className="rounded-xl border border-slate-800 bg-[#111827] p-4">
-          <h2 className="font-semibold">Thử giả mạo bản tin IoT</h2>
-          <p className="mt-2 text-sm text-slate-400">
-            BE tạo bản tin mẫu đã ký cho xe đang chọn. FE chỉ đổi nhiệt độ,
-            giữ nguyên chữ ký rồi gửi vào endpoint nhận TRANSPORT record để BE quyết định.
-            Khóa demo nằm ở BE; đây là dữ liệu mô phỏng, không chứng minh cảm biến vật lý đã đo.
-          </p>
-          <label className="mt-4 block max-w-lg text-sm text-slate-300">
-            Xe dùng để thử
-            <select value={vehicleId} disabled={preparingSignedRecord || attackBusy || demoRunning}
-              onChange={(event) => {
-                setVehicleId(event.target.value);
-                setSignedRequestText("");
-                setAttackStep("idle");
-                setAttackResults([]);
-                setAttackError("");
-              }}
-              className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2">
-              <option value="">Chọn xe</option>
-              {vehicles.map((vehicle) => (
-                <option key={vehicle.id} value={vehicle.id} disabled={vehicle.demoBusy}>
-                  Xe #{vehicle.id} · {vehicle.vehiclePlate} · sequence cuối {vehicle.lastSequence ?? 0}
-                  {vehicle.demoBusy ? " · Đang bận" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          {selectedVehicle && (
-            <p className="mt-2 text-sm text-cyan-300">
-              Đang chọn xe #{selectedVehicle.id}: lastSequence = {selectedVehicle.lastSequence ?? 0};
-              bản tin mẫu kế tiếp sẽ dùng sequence {Number(selectedVehicle.lastSequence ?? 0) + 1}.
-              Sequence được tính riêng cho từng xe, kể cả khi xe đã chạy ở batch khác.
+
+          <section className="rounded-xl border border-slate-800 bg-[#111827] p-4">
+            <h2 className="font-semibold">Thử giả mạo bản tin IoT</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              BE tạo bản tin mẫu đã ký cho xe đang chọn. FE chỉ đổi nhiệt độ,
+              giữ nguyên chữ ký rồi gửi vào endpoint nhận TRANSPORT record để BE quyết định.
+              Khóa demo nằm ở BE; đây là dữ liệu mô phỏng, không chứng minh cảm biến vật lý đã đo.
             </p>
-          )}
-          <button type="button" onClick={prepareSignedRecord}
-            disabled={preparingSignedRecord || attackBusy || demoRunning || !selectedVehicle || selectedVehicle.demoBusy || routePositions.length === 0}
-            className="mt-4 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold disabled:opacity-40">
-            {preparingSignedRecord ? "Đang tạo..." : "Tạo bản tin mẫu đã ký"}
-          </button>
-          <label className="mt-4 block text-sm text-slate-300">
-            Bản tin gốc do BE tạo (không cần dán JSON)
-            <textarea
-              rows={8}
-              spellCheck={false}
-              readOnly
-              value={signedRequestText}
-              placeholder="Bấm Tạo bản tin mẫu đã ký để BE điền JSON tại đây."
-              className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-3 font-mono text-xs text-slate-100 placeholder:text-slate-600"
-            />
-          </label>
-          <label className="mt-3 block text-sm text-slate-300">
-            Nhiệt độ giả mạo (°C)
-            <input
-              type="number"
-              step="any"
-              value={changedTemperature}
-              onChange={(event) => {
-                setChangedTemperature(event.target.value);
-                setAttackStep("idle");
-                setAttackResults([]);
-                setAttackError("");
-              }}
-              placeholder="Ví dụ: 25"
-              className="mt-1 w-full max-w-52 rounded-lg border border-slate-600 bg-[#0b1020] p-2"
-            />
-          </label>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button type="button" onClick={() => testSignedRequest("forged")}
-              disabled={attackBusy || preparingSignedRecord || demoRunning || !signedRequestText || attackStep !== "idle"}
-              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold disabled:opacity-40">
-              1. Gửi bản đã sửa
-            </button>
-            <button type="button" onClick={() => testSignedRequest("original")}
-              disabled={attackBusy || demoRunning || attackStep !== "forgedRejected"}
-              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold disabled:opacity-40">
-              2. Gửi bản gốc đối chứng
-            </button>
-            <button type="button" onClick={() => testSignedRequest("replay")}
-              disabled={attackBusy || demoRunning || attackStep !== "originalAccepted"}
-              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold disabled:opacity-40">
-              3. Phát lại bản gốc
-            </button>
-          </div>
-          <p className="mt-2 text-xs text-amber-300">
-            Bước 2 tạo một TRANSPORT record thật và tăng sequence của xe. Chỉ thử trên lô demo.
-          </p>
-          {attackBusy && <p className="mt-3 text-sm text-slate-400">Đang đợi phản hồi từ BE...</p>}
-          {attackError && (
-            <p className="mt-3 rounded-lg bg-red-500/10 p-3 text-sm text-red-300">{attackError}</p>
-          )}
-          {attackResults.length > 0 && (
-            <ol className="mt-4 space-y-2 text-sm">
-              {attackResults.map((result, index) => (
-                <li key={index} className={`rounded-lg p-3 ${result.expected
-                  ? "bg-emerald-500/10 text-emerald-200"
-                  : "bg-red-500/10 text-red-200"}`}>
-                  <strong>{result.mode === "forged" ? "Bản sửa nhiệt độ"
-                    : result.mode === "original" ? "Bản gốc" : "Phát lại"}: HTTP {result.status}</strong>
-                  <p className="mt-1 break-words">BE: {result.message}</p>
-                  <p>Sequence xe: {result.beforeSequence} → {result.afterSequence}</p>
-                  {!result.expected && <p>Chưa đạt kết quả mong đợi; kiểm tra phản hồi BE.</p>}
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-      )}
+            <label className="mt-4 block max-w-lg text-sm text-slate-300">
+              Xe dùng để thử
+              <select value={vehicleId} disabled={preparingSignedRecord || attackBusy || demoRunning}
+                onChange={(event) => {
+                  setVehicleId(event.target.value);
+                  setSignedRequestText("");
+                  setAttackStep("idle");
+                  setAttackResults([]);
+                  setAttackError("");
+                }}
+                className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-2">
+                <option value="">Chọn xe</option>
+                {vehicles.map((vehicle) => (
+                  <option key={vehicle.id} value={vehicle.id} disabled={vehicle.demoBusy}>
+                    Xe #{vehicle.id} · {vehicle.vehiclePlate} · sequence cuối {vehicle.lastSequence ?? 0}
+                    {vehicle.demoBusy ? " · Đang bận" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selectedVehicle && (
+              <p className="mt-2 text-sm text-cyan-300">
+                Đang chọn xe #{selectedVehicle.id}: lastSequence = {selectedVehicle.lastSequence ?? 0};
+                bản tin mẫu kế tiếp sẽ dùng sequence {Number(selectedVehicle.lastSequence ?? 0) + 1}.
+                Sequence được tính riêng cho từng xe, kể cả khi xe đã chạy ở batch khác.
+              </p>
+            )}
+            <p className="mt-4 rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-sm text-indigo-200">
+              Chọn “Dùng điểm này để thử tấn công” trong danh sách Bằng chứng điểm đo
+              IoT phía trên. Hệ thống sẽ lấy bản tin đã ký của điểm đó; không tạo thêm
+              điểm vận chuyển.
+            </p>
+            {selectedAttackRecordKey ? (
+              <p className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
+                Đang dùng điểm: <strong>{selectedAttackRecordKey}</strong>
+              </p>
+            ) : (
+              <p className="mt-4 text-sm text-amber-300">
+                Chưa chọn điểm đo. Bấm “Dùng điểm này để thử tấn công” ở danh sách phía trên.
+              </p>
+            )}
+            <label className="mt-4 block text-sm text-slate-300">
+              Bản tin gốc do BE tạo (không cần dán JSON)
+              <textarea
+                rows={8}
+                spellCheck={false}
+                readOnly
+                value={signedRequestText}
+                placeholder="Chưa chọn điểm đo nào để thử tấn công"
+                className="mt-1 w-full rounded-lg border border-slate-600 bg-[#0b1020] p-3 font-mono text-xs text-slate-100 placeholder:text-slate-600"
+              />
+            </label>
+            <label className="mt-3 block text-sm text-slate-300">
+              Nhiệt độ giả mạo (°C)
+              <input
+                type="number"
+                step="any"
+                value={changedTemperature}
+                onChange={(event) => {
+                  setChangedTemperature(event.target.value);
+                  setAttackStep("idle");
+                  setAttackResults([]);
+                  setAttackError("");
+                }}
+                placeholder="Ví dụ: 25"
+                className="mt-1 w-full max-w-52 rounded-lg border border-slate-600 bg-[#0b1020] p-2"
+              />
+            </label>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => testSignedRequest("forged")}
+                disabled={
+                  attackBusy ||
+                  preparingSignedRecord ||
+                  demoRunning ||
+                  !signedRequestText ||
+                  attackStep !== "idle"
+                }
+                className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold disabled:opacity-40"
+              >
+                1. Thử sửa nhiệt độ
+              </button>
+
+              <button
+                type="button"
+                onClick={() => testSignedRequest("replay")}
+                disabled={
+                  attackBusy ||
+                  preparingSignedRecord ||
+                  demoRunning ||
+                  !signedRequestText ||
+                  attackStep !== "forgedRejected"
+                }
+                className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold disabled:opacity-40"
+              >
+                2. Phát lại bản gốc
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-amber-300">
+              Bước 2 tạo một TRANSPORT record thật và tăng sequence của xe. Chỉ thử trên lô demo.
+            </p>
+            {attackBusy && <p className="mt-3 text-sm text-slate-400">Đang đợi phản hồi từ BE...</p>}
+            {attackError && (
+              <p className="mt-3 rounded-lg bg-red-500/10 p-3 text-sm text-red-300">{attackError}</p>
+            )}
+            {attackResults.length > 0 && (
+              <ol className="mt-4 space-y-2 text-sm">
+                {attackResults.map((result, index) => (
+                  <li key={index} className={`rounded-lg p-3 ${result.expected
+                    ? "bg-emerald-500/10 text-emerald-200"
+                    : "bg-red-500/10 text-red-200"}`}>
+                    <strong>{result.mode === "forged" ? "Bản sửa nhiệt độ"
+                      : result.mode === "original" ? "Bản gốc" : "Phát lại"}: HTTP {result.status}</strong>
+                    <p className="mt-1 break-words">BE: {result.message}</p>
+                    <p>Sequence xe: {result.beforeSequence} → {result.afterSequence}</p>
+                    {!result.expected && <p>Chưa đạt kết quả mong đợi; kiểm tra phản hồi BE.</p>}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        )}
 
       {selectedEvidenceKey && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4"
@@ -1170,13 +1210,12 @@ export default function DistributorJourneyPage() {
             )}
             {evidence && (
               <div className="mt-4 space-y-4 text-sm">
-                <div className={`rounded-lg p-4 ${
-                  evidence.signatureValid === true
-                    ? "bg-emerald-500/10 text-emerald-300"
-                    : evidence.signatureValid === false
-                      ? "bg-red-500/10 text-red-300"
-                      : "bg-amber-500/10 text-amber-300"
-                }`}>
+                <div className={`rounded-lg p-4 ${evidence.signatureValid === true
+                  ? "bg-emerald-500/10 text-emerald-300"
+                  : evidence.signatureValid === false
+                    ? "bg-red-500/10 text-red-300"
+                    : "bg-amber-500/10 text-amber-300"
+                  }`}>
                   <strong>
                     {evidence.signatureValid === true
                       ? "Chữ ký Ed25519 hợp lệ"
