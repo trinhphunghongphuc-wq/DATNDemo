@@ -6,6 +6,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -43,50 +44,80 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             String username = jwtService.extractUsername(jwt);
 
             if (username == null || username.isBlank()) {
-                sendUnauthorized(response);
+                sendError(
+                        response,
+                        HttpServletResponse.SC_UNAUTHORIZED,
+                        "Token không hợp lệ."
+                );
                 return;
             }
 
-            if (SecurityContextHolder.getContext().getAuthentication() == null) {
-                UserDetails userDetails =
-                        userDetailsService.loadUserByUsername(username);
+            // Đọc lại tài khoản từ database cho mỗi request có token.
+            UserDetails userDetails =
+                    userDetailsService.loadUserByUsername(username);
 
-                if (!jwtService.isTokenValid(jwt, userDetails)) {
-                    sendUnauthorized(response);
-                    return;
-                }
-
-                UsernamePasswordAuthenticationToken authToken =
-                        new UsernamePasswordAuthenticationToken(
-                                userDetails,
-                                null,
-                                userDetails.getAuthorities()
-                        );
-
-                authToken.setDetails(
-                        new WebAuthenticationDetailsSource()
-                                .buildDetails(request)
+            if (!jwtService.isTokenValid(jwt, userDetails)) {
+                sendError(
+                        response,
+                        HttpServletResponse.SC_UNAUTHORIZED,
+                        "Token không hợp lệ hoặc đã hết hạn."
                 );
-
-                SecurityContextHolder.getContext()
-                        .setAuthentication(authToken);
+                return;
             }
+
+            // Chặn cả token được cấp trước khi tài khoản bị vô hiệu hóa.
+            if (!userDetails.isEnabled()) {
+                throw new DisabledException("Account disabled");
+            }
+
+            UsernamePasswordAuthenticationToken authToken =
+                    new UsernamePasswordAuthenticationToken(
+                            userDetails,
+                            null,
+                            userDetails.getAuthorities()
+                    );
+
+            authToken.setDetails(
+                    new WebAuthenticationDetailsSource()
+                            .buildDetails(request)
+            );
+
+            var context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(authToken);
+            SecurityContextHolder.setContext(context);
+
+        } catch (DisabledException exception) {
+            sendError(
+                    response,
+                    HttpServletResponse.SC_FORBIDDEN,
+                    "Tài khoản đã bị vô hiệu hóa."
+            );
+            return;
+
         } catch (JwtException | IllegalArgumentException
                  | AuthenticationException exception) {
-            sendUnauthorized(response);
+            sendError(
+                    response,
+                    HttpServletResponse.SC_UNAUTHORIZED,
+                    "Token không hợp lệ hoặc phiên đăng nhập không còn được chấp nhận."
+            );
             return;
         }
 
         filterChain.doFilter(request, response);
     }
 
-    private void sendUnauthorized(HttpServletResponse response)
-            throws IOException {
+    private void sendError(
+            HttpServletResponse response,
+            int status,
+            String message
+    ) throws IOException {
         SecurityContextHolder.clearContext();
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+
+        response.setStatus(status);
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write(
-                "{\"message\":\"Phiên đăng nhập đã hết hạn hoặc không hợp lệ.\"}"
+                "{\"message\":\"" + message + "\"}"
         );
     }
 }

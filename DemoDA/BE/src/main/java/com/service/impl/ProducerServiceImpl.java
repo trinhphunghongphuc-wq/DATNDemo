@@ -33,6 +33,7 @@ public class ProducerServiceImpl implements ProducerService {
     private final VerifyService verifyService;
     private final StageAnchorTransactionRepository stageAnchorTransactionRepository;
     private final ProducerPartnerService producerPartnerService;
+    private final BatchLockService batchLockService;
 
     @Override
     @Transactional
@@ -71,13 +72,29 @@ public class ProducerServiceImpl implements ProducerService {
 
     @Override
     @Transactional
-    public ProducerBatchResponse addRecords(Long batchId, List<RecordRequest> requests, String username) {
+    public ProducerBatchResponse addRecords(
+            Long batchId,
+            List<RecordRequest> requests,
+            String username
+    ) {
+        batchLockService.lock(batchId);
+
         Batch batch = getProducerBatch(batchId, username);
+
         validateBatchCanBeModified(batch);
-        recordService.createRecordsForBatch(batch, requests, Role.PRODUCER);
+
+        recordService.createRecordsForBatch(
+                batch,
+                requests,
+                Role.PRODUCER
+        );
 
         Batch updatedBatch = batchRepository.findById(batchId)
-                .orElseThrow(() -> new RuntimeException("Batch not found with id: " + batchId));
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Batch not found with id: " + batchId
+                        )
+                );
 
         return mapToProducerBatchResponse(updatedBatch);
     }

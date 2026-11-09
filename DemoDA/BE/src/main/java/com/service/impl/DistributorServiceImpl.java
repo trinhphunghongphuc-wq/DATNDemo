@@ -46,6 +46,7 @@ public class DistributorServiceImpl implements DistributorService {
     private final DeviceSignatureService deviceSignatureService;
     private ProductCategoryResponse productCategory;
     private final DemoVehicleRunRegistry demoVehicleRunRegistry;
+    private final BatchLockService batchLockService;
 
 
     @Override

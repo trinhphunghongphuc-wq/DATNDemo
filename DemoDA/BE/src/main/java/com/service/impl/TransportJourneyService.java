@@ -46,6 +46,7 @@ public class TransportJourneyService {
     private final ObjectMapper json;
     private final RestClient routes;
     private final String routingUrl;
+    private final BatchLockService batchLockService;
 
     public TransportJourneyService(
             BatchRepository batches,
@@ -55,6 +56,7 @@ public class TransportJourneyService {
             DeviceSignatureService deviceSignatureService,
             ObjectMapper json,
             RestClient.Builder restClient,
+            BatchLockService batchLockService,
             @Value("${routing.osrm.url:https://router.project-osrm.org}")
             String routingUrl
     ) {
@@ -66,6 +68,7 @@ public class TransportJourneyService {
         this.json = json;
         this.routes = restClient.build();
         this.routingUrl = routingUrl.replaceAll("/+$", "");
+        this.batchLockService = batchLockService;
     }
 
     @Transactional
@@ -74,7 +77,11 @@ public class TransportJourneyService {
             TransportRouteRequest request,
             CustomUserDetails user
     ) {
+        batchLockService.lock(batchId);
+
         Batch batch = permittedBatch(batchId, user);
+
+        // Giữ phần còn lại.
 
         if (user.getRole() != Role.DISTRIBUTOR) {
             throw new AccessDeniedException(

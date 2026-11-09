@@ -3,7 +3,7 @@ package com.service;
 import com.dto.batch.*;
 import com.entity.Batch;
 import com.enums.Role;
-
+import com.security.CustomUserDetails;
 import java.util.List;
 
 public interface BatchService {
@@ -22,4 +22,6 @@ public interface BatchService {
     //BatchDetail
     BatchDetailResponse getBatchDetail(Long id);
     BatchDetailResponse getBatchByCode(String batchCode);
+
+    List<BatchListResponse> getBatchesForUser(CustomUserDetails user);
 }

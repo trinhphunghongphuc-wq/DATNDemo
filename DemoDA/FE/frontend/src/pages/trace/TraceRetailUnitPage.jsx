@@ -11,6 +11,11 @@ function isRetailerLoggedIn() {
   return role === "RETAILER" && Boolean(token);
 }
 
+function formatPrice(value) {
+  if (value == null) return "Chưa có giá";
+  return `${new Intl.NumberFormat("vi-VN").format(value)} ₫`;
+}
+
 async function getJson(url, token = null) {
   const response = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -297,6 +302,28 @@ export default function TraceRetailUnitPage() {
               }
             />
           </dl>
+        </section>
+
+        <section className="rounded-2xl bg-white p-6 shadow">
+          <h2 className="text-lg font-bold">Giá bán hiện tại</h2>
+
+          <p className="mt-2 text-2xl font-bold text-emerald-700">
+            {unit.type === "PACKAGED"
+              ? `${formatPrice(unit.pricePerPackage)}/gói`
+              : `${formatPrice(unit.pricePerKg)}/kg`}
+          </p>
+
+          {unit.priceUpdatedAt && (
+            <p className="mt-2 text-xs text-slate-500">
+              Cập nhật lúc{" "}
+              {new Date(unit.priceUpdatedAt).toLocaleString("vi-VN")}
+            </p>
+          )}
+
+          <p className="mt-2 text-xs text-slate-500">
+            Giá do đơn vị bán lẻ công bố và có thể thay đổi; phần xác minh
+            blockchain áp dụng cho record truy xuất.
+          </p>
         </section>
 
         <section className="rounded-2xl bg-white p-6 shadow">

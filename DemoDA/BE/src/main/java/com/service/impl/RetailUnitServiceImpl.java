@@ -10,6 +10,8 @@ import com.entity.Batch;
 import com.entity.RetailUnit;
 import com.entity.RetailUnitPriceHistory;
 import com.enums.*;
+import com.exception.BusinessException;
+import com.exception.ResourceNotFoundException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.repository.BatchRepository;
 import com.repository.RetailUnitPriceHistoryRepository;
@@ -17,6 +19,7 @@ import com.repository.RetailUnitRepository;
 import com.service.RecordService;
 import com.service.RetailUnitService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,7 +40,7 @@ public class RetailUnitServiceImpl implements RetailUnitService {
 
     private final BatchRepository batchRepository;
     private final RetailUnitRepository retailUnitRepository;
-
+    private final BatchLockService batchLockService;
     private final RecordService recordService;
     private final ObjectMapper objectMapper;
 
@@ -50,46 +53,53 @@ public class RetailUnitServiceImpl implements RetailUnitService {
             Long retailerId,
             CreateRetailUnitRequest request
     ) {
+        // Khóa trước khi đọc trạng thái và trọng lượng.
+        batchLockService.lock(batchId);
+
         Batch batch = getBatchForRetailer(batchId, retailerId);
 
         if (batch.isRetailerRecordingClosed()) {
-            throw new IllegalStateException(
-                    "Retailer recording is closed; cannot create a retail unit"
+            throw new BusinessException(
+                    "Lô hàng đã đóng ghi nhận, không thể tạo đơn vị bán lẻ."
             );
         }
 
         if (batch.getStatus() != BatchStatus.AT_RETAIL) {
-            throw new RuntimeException("Batch is not at retail yet");
-        }
-
-        if (batch.getRemainingWeight() == null) {
-            throw new RuntimeException(
-                    "Batch remaining weight is not initialized"
+            throw new BusinessException(
+                    "Lô hàng chưa ở giai đoạn bán lẻ."
             );
         }
 
-        if (request.getAllocatedWeight() == null
+        if (batch.getRemainingWeight() == null
+                || !Double.isFinite(batch.getRemainingWeight())
+                || batch.getRemainingWeight() < 0) {
+            throw new BusinessException(
+                    "Trọng lượng còn lại của lô hàng không hợp lệ."
+            );
+        }
+
+        if (request == null
+                || request.getAllocatedWeight() == null
+                || !Double.isFinite(request.getAllocatedWeight())
                 || request.getAllocatedWeight() <= 0) {
-            throw new RuntimeException(
-                    "Allocated weight must be greater than 0"
+            throw new IllegalArgumentException(
+                    "Trọng lượng phân bổ phải là số hữu hạn lớn hơn 0."
             );
         }
 
         if (batch.getRemainingWeight() < request.getAllocatedWeight()) {
-            throw new RuntimeException(
-                    "Not enough remaining weight in batch"
+            throw new BusinessException(
+                    "Không đủ trọng lượng còn lại trong lô hàng."
             );
         }
 
-        String storageInstructions = request.getStorageInstructions() == null
-                ? ""
-                : request.getStorageInstructions().trim();
-
-        if (storageInstructions.isBlank()) {
-            throw new IllegalArgumentException("Vui lòng nhập cách bảo quản");
-        }
-
         validateRetailUnitRequest(request);
+
+        String storageInstructions = request.getStorageInstructions();
+
+        if (storageInstructions != null) {
+            storageInstructions = storageInstructions.trim();
+        }
 
         String retailCode = generateRetailCode();
         String qrContent = "/trace/retail/" + retailCode;
@@ -112,18 +122,27 @@ public class RetailUnitServiceImpl implements RetailUnitService {
                 .storageInstructions(storageInstructions)
                 .build();
 
-        RetailUnit savedRetailUnit = retailUnitRepository.save(retailUnit);
+        RetailUnit savedRetailUnit =
+                retailUnitRepository.save(retailUnit);
 
         Map<String, Object> event = new LinkedHashMap<>();
+
         event.put("eventType", "RETAIL_UNIT_CREATED");
-        event.put("initialPrice",
+
+        event.put(
+                "initialPrice",
                 savedRetailUnit.getType() == RetailUnitType.PACKAGED
                         ? savedRetailUnit.getPricePerPackage()
-                        : savedRetailUnit.getPricePerKg());
-        event.put("priceUnit",
+                        : savedRetailUnit.getPricePerKg()
+        );
+
+        event.put(
+                "priceUnit",
                 savedRetailUnit.getType() == RetailUnitType.PACKAGED
                         ? "VND_PER_PACKAGE"
-                        : "VND_PER_KG");
+                        : "VND_PER_KG"
+        );
+
         event.put("batchId", batch.getId());
         event.put("retailCode", savedRetailUnit.getRetailCode());
         event.put("retailerId", retailerId);
@@ -147,7 +166,9 @@ public class RetailUnitServiceImpl implements RetailUnitService {
                 Role.RETAILER
         ).get(0);
 
-        savedRetailUnit.setRetailRecordKey(retailRecord.getRecordKey());
+        savedRetailUnit.setRetailRecordKey(
+                retailRecord.getRecordKey()
+        );
 
         if (request.getInitialStorageReading() != null) {
             addStorageReading(
@@ -213,28 +234,31 @@ public class RetailUnitServiceImpl implements RetailUnitService {
             RetailStorageReadingRequest request
     ) {
         RetailUnit unit = retailUnitRepository.findById(retailUnitId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Retail unit not found: " + retailUnitId
-                ));
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Retail unit not found: " + retailUnitId
+                        )
+                );
 
         if (!Objects.equals(unit.getRetailerId(), retailerId)) {
-            throw new IllegalArgumentException(
-                    "Retail unit does not belong to this retailer"
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Bạn không có quyền ghi dữ liệu cho đơn vị bán lẻ này."
             );
         }
 
-        Batch batch = unit.getBatch();
+        Batch batch = batchLockService.lock(
+                unit.getBatch().getId()
+        );
 
         if (batch.isRetailerRecordingClosed()) {
-            throw new IllegalStateException(
-                    "Retailer recording is closed; "
-                            + "cannot add a storage reading"
+            throw new BusinessException(
+                    "Lô hàng đã đóng ghi nhận, không thể thêm số đo."
             );
         }
 
         if (batch.getStatus() != BatchStatus.AT_RETAIL) {
-            throw new IllegalStateException(
-                    "Batch is not at Retailer"
+            throw new BusinessException(
+                    "Lô hàng chưa ở giai đoạn bán lẻ."
             );
         }
 
@@ -381,12 +405,33 @@ public class RetailUnitServiceImpl implements RetailUnitService {
                 .toList();
     }
 
-    private Batch getBatchForRetailer(Long batchId, Long retailerId) {
+    private Batch getBatchForRetailer(
+            Long batchId,
+            Long retailerId
+    ) {
+        if (retailerId == null) {
+            throw new AccessDeniedException(
+                    "Không xác định được tài khoản bán lẻ."
+            );
+        }
+
+        if (batchId == null) {
+            throw new IllegalArgumentException(
+                    "batchId không được để trống."
+            );
+        }
+
         Batch batch = batchRepository.findById(batchId)
-                .orElseThrow(() -> new RuntimeException("Batch not found with id: " + batchId));
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Không tìm thấy lô hàng có ID: " + batchId
+                        )
+                );
 
         if (!Objects.equals(batch.getRetailerId(), retailerId)) {
-            throw new RuntimeException("Batch not assigned to this retailer");
+            throw new AccessDeniedException(
+                    "Bạn không có quyền truy cập lô hàng này."
+            );
         }
 
         return batch;

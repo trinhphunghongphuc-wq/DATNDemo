@@ -9,6 +9,10 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.stream.Collectors;
+import org.springframework.security.access.AccessDeniedException;
+
+import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.core.AuthenticationException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -90,4 +94,46 @@ public class GlobalExceptionHandler {
 
         return new ResponseEntity<>(error, status);
     }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(
+            AccessDeniedException ex,
+            HttpServletRequest request
+    ) {
+        return buildError(
+                "Bạn không có quyền thực hiện thao tác này.",
+                HttpStatus.FORBIDDEN,
+                request
+        );
+    }
+
+    @ExceptionHandler(DisabledException.class)
+    public ResponseEntity<ErrorResponse> handleDisabledAccount(
+            DisabledException ex,
+            HttpServletRequest request
+    ) {
+        return buildError(
+                "Tài khoản đã bị vô hiệu hóa.",
+                HttpStatus.FORBIDDEN,
+                request
+        );
+    }
+
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ErrorResponse> handleAuthentication(
+            AuthenticationException ex,
+            HttpServletRequest request
+    ) {
+        return buildError(
+                "Thông tin đăng nhập không hợp lệ.",
+                HttpStatus.UNAUTHORIZED,
+                request
+        );
+    }
+
+
+
+
+
+
 }
