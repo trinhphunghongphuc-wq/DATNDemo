@@ -1,36 +1,38 @@
 package com.controller;
 
-import com.dto.record.RecordRequest;
-import com.entity.Batch;
-import com.service.BatchService;
-import com.service.RecordService;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
 import com.entity.Record;
+import com.service.RecordService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/records")
+@RequiredArgsConstructor
 public class RecordController {
 
     private final RecordService recordService;
-    private final BatchService batchService;
-    public RecordController(RecordService recordService, BatchService batchService) {
-        this.recordService = recordService;
-        this.batchService = batchService;
-    }
 
     @GetMapping("/batch/{batchId}")
-    public ResponseEntity<List<Record>> getRecordsByBatchId(@PathVariable Long batchId) {
-        List<Record> records = recordService.getRecordsByBatchId(batchId);
-        return ResponseEntity.ok(records);
+    @PreAuthorize("@batchAccess.canRead(#p0, authentication)")
+    public ResponseEntity<List<Record>> getRecordsByBatchId(
+            @PathVariable Long batchId
+    ) {
+        return ResponseEntity.ok(
+                recordService.getRecordsByBatchId(batchId)
+        );
     }
 
     @GetMapping("/{recordKey}")
-    public ResponseEntity<Record> getRecordByRecordKey(@PathVariable String recordKey) {
-        Record record = recordService.getByRecordKey(recordKey);
-        return ResponseEntity.ok(record);
+    @PreAuthorize("@batchAccess.canReadRecord(#p0, authentication)")
+    public ResponseEntity<Record> getRecordByRecordKey(
+            @PathVariable String recordKey
+    ) {
+        return ResponseEntity.ok(
+                recordService.getByRecordKey(recordKey)
+        );
     }
-
-
 }

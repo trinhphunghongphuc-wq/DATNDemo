@@ -1,6 +1,7 @@
 package com.dto.user.retailer;
 
 import com.enums.RetailUnitType;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 import jakarta.validation.Valid;
 
@@ -23,4 +24,7 @@ public class CreateRetailUnitRequest {
 
     @Valid
     private RetailStorageReadingRequest initialStorageReading;
+
+    @Size(max = 500, message = "Cách bảo quản không được quá 500 ký tự")
+    private String storageInstructions;
 }

@@ -32,12 +32,47 @@ import RetailerBatchesPage from "../pages/retailer/RetailerBatchesPage";
 import RetailerRecordsPage from "../pages/retailer/RetailerRecordsPage";
 import RetailUnitsPage from "../pages/retailer/RetailUnitsPage";
 
+import { useEffect } from "react";
+import { expireSession } from "../api/axiosClient";
+
+
 function getRole() {
   return (localStorage.getItem("role") || "").replace(/^ROLE_/, "");
 }
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem("token");
+
+  useEffect(() => {
+    if (!token) return;
+
+    try {
+      const payload = JSON.parse(
+        atob(
+          token.split(".")[1]
+            .replace(/-/g, "+")
+            .replace(/_/g, "/")
+        )
+      );
+
+      if (!payload.exp) return;
+
+      const remainingMs = payload.exp * 1000 - Date.now();
+
+      if (remainingMs <= 0) {
+        expireSession();
+        return;
+      }
+
+      const timer = window.setTimeout(
+        expireSession,
+        Math.min(remainingMs, 2_147_483_647)
+      );
+      return () => window.clearTimeout(timer);
+    } catch {
+      expireSession();
+    }
+  }, [token]);
 
   if (!token) {
     return <Navigate to="/login" replace />;

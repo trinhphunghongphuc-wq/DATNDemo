@@ -3,9 +3,7 @@ package com.service;
 
 
 import com.dto.record.RecordItemResponse;
-import com.dto.user.retailer.CreateRetailUnitRequest;
-import com.dto.user.retailer.RetailStorageReadingRequest;
-import com.dto.user.retailer.RetailUnitResponse;
+import com.dto.user.retailer.*;
 
 import java.util.List;
 
@@ -24,5 +22,16 @@ public interface RetailUnitService {
             Long retailUnitId,
             Long retailerId,
             RetailStorageReadingRequest request
+    );
+
+    RetailUnitResponse updatePrice(
+            Long retailUnitId,
+            Long retailerId,
+            UpdateRetailUnitPriceRequest request
+    );
+
+    List<RetailUnitPriceHistoryResponse> getPriceHistory(
+            Long retailUnitId,
+            Long retailerId
     );
 }

@@ -47,7 +47,7 @@ public class RetailerServiceImpl implements RetailerService {
     private final RecordService recordService;
     private final VerifyService verifyService;
     private final ObjectMapper objectMapper;
-
+    private final BatchLockService batchLockService;
     private final RetailUnitRepository retailUnitRepository;
     private final RecordRepository recordRepository;
     private final StageAnchorTransactionRepository stageAnchorTransactionRepository;
@@ -248,17 +248,37 @@ public class RetailerServiceImpl implements RetailerService {
     }
 
     @Override
+    @Transactional
     public RecordItemResponse addStorageReading(
             Long batchId,
             Long retailerId,
             RetailStorageReadingRequest request
     ) {
-        // addRetailRecord bên dưới sẽ kiểm tra batch thuộc Retailer,
-        // status AT_RETAIL và stage chưa anchor.
-        if (!Double.isFinite(request.temperature())
+        batchLockService.lock(batchId);
+
+        // Kiểm tra quyền trước khi xử lý dữ liệu.
+        getBatchForRetailer(batchId, retailerId);
+
+        if (request == null
+                || request.temperature() == null
+                || request.humidity() == null
+                || !Double.isFinite(request.temperature())
                 || !Double.isFinite(request.humidity())) {
             throw new IllegalArgumentException(
-                    "Temperature and humidity must be finite numbers"
+                    "Nhiệt độ và độ ẩm phải là số hữu hạn."
+            );
+        }
+
+        if (request.humidity() < 0 || request.humidity() > 100) {
+            throw new IllegalArgumentException(
+                    "Độ ẩm phải nằm trong khoảng 0 đến 100."
+            );
+        }
+
+        if (request.location() == null
+                || request.location().isBlank()) {
+            throw new IllegalArgumentException(
+                    "Vị trí bảo quản không được để trống."
             );
         }
 
@@ -267,30 +287,45 @@ public class RetailerServiceImpl implements RetailerService {
         data.put("location", request.location().trim());
         data.put("temperature", request.temperature());
         data.put("humidity", request.humidity());
-        data.put("timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString());
+        data.put(
+                "timestamp",
+                OffsetDateTime.now(ZoneOffset.UTC).toString()
+        );
         data.put("readingSource", "MANUAL_ENTRY");
-        data.put("note", request.note() == null ? "" : request.note().trim());
+        data.put(
+                "note",
+                request.note() == null ? "" : request.note().trim()
+        );
 
         try {
             RecordRequest recordRequest = new RecordRequest();
             recordRequest.setRecordType(RecordType.RETAIL);
-            recordRequest.setRawJson(objectMapper.writeValueAsString(data));
-
-            // Consumer chỉ nhận thống kê; không cần công khai JSON gốc
-            // và vị trí bảo quản chi tiết.
+            recordRequest.setRawJson(
+                    objectMapper.writeValueAsString(data)
+            );
             recordRequest.setPrivateData(true);
 
-            return addRetailRecord(batchId, recordRequest, retailerId);
+            return addRetailRecord(
+                    batchId,
+                    recordRequest,
+                    retailerId
+            );
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException(
-                    "Cannot create retailer storage reading", ex
+                    "Cannot create retailer storage reading",
+                    ex
             );
         }
     }
 
     @Override
     @Transactional
-    public Map<String, Object> closeRecording(Long batchId, Long retailerId) {
+    public Map<String, Object> closeRecording(
+            Long batchId,
+            Long retailerId
+    ) {
+        batchLockService.lock(batchId);
+
         Batch batch = getBatchForRetailer(batchId, retailerId);
 
         if (batch.getStatus() != BatchStatus.AT_RETAIL) {

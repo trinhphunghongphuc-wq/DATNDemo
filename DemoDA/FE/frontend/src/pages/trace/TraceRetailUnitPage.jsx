@@ -11,6 +11,11 @@ function isRetailerLoggedIn() {
   return role === "RETAILER" && Boolean(token);
 }
 
+function formatPrice(value) {
+  if (value == null) return "Chưa có giá";
+  return `${new Intl.NumberFormat("vi-VN").format(value)} ₫`;
+}
+
 async function getJson(url, token = null) {
   const response = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -185,12 +190,24 @@ export default function TraceRetailUnitPage() {
     setVerification(null);
 
     try {
-      const result = await getJson(
+      const url =
         `${API_BASE}/verify/batches/${unit.batchId}` +
         `/records/${encodeURIComponent(unit.retailRecordKey)}` +
-        `/verify-on-chain`,
-        token
-      );
+        `/verify-on-chain`;
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          result?.message ?? `Xác minh thất bại (HTTP ${response.status}).`
+        );
+      }
 
       setVerification(result);
     } catch (err) {
@@ -285,6 +302,35 @@ export default function TraceRetailUnitPage() {
               }
             />
           </dl>
+        </section>
+
+        <section className="rounded-2xl bg-white p-6 shadow">
+          <h2 className="text-lg font-bold">Giá bán hiện tại</h2>
+
+          <p className="mt-2 text-2xl font-bold text-emerald-700">
+            {unit.type === "PACKAGED"
+              ? `${formatPrice(unit.pricePerPackage)}/gói`
+              : `${formatPrice(unit.pricePerKg)}/kg`}
+          </p>
+
+          {unit.priceUpdatedAt && (
+            <p className="mt-2 text-xs text-slate-500">
+              Cập nhật lúc{" "}
+              {new Date(unit.priceUpdatedAt).toLocaleString("vi-VN")}
+            </p>
+          )}
+
+          <p className="mt-2 text-xs text-slate-500">
+            Giá do đơn vị bán lẻ công bố và có thể thay đổi; phần xác minh
+            blockchain áp dụng cho record truy xuất.
+          </p>
+        </section>
+
+        <section className="rounded-2xl bg-white p-6 shadow">
+          <h2 className="text-lg font-bold">Cách bảo quản</h2>
+          <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">
+            {unit.storageInstructions || "Chưa có hướng dẫn bảo quản."}
+          </p>
         </section>
 
         <MeasuredConditions
@@ -392,8 +438,8 @@ export default function TraceRetailUnitPage() {
                 {verification && (
                   <div
                     className={`mt-4 rounded-lg p-4 ${verification.valid
-                        ? "bg-emerald-50 text-emerald-800"
-                        : "bg-red-50 text-red-800"
+                      ? "bg-emerald-50 text-emerald-800"
+                      : "bg-red-50 text-red-800"
                       }`}
                   >
                     <p className="font-bold">

@@ -2,6 +2,7 @@ package com.dto.product;
 
 import com.enums.RetailUnitType;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -13,6 +14,10 @@ public record RetailUnitTraceResponse(
         Double packageWeight,
         Integer packageQuantity,
         LocalDate expiryDate,
+        String storageInstructions,
+        Double pricePerKg,
+        Double pricePerPackage,
+        Instant priceUpdatedAt,
         String batchCode,
         Long batchId,
         String retailRecordKey,
@@ -53,5 +58,7 @@ public record RetailUnitTraceResponse(
             Integer outOfRangeCount,
             String readingSource
     ) {}
+
+
 
 }

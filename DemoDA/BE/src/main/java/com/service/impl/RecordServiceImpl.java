@@ -46,6 +46,8 @@ public class RecordServiceImpl implements RecordService {
     private final StageMerkleService stageMerkleService;
     private final DataEncryptionService dataEncryptionService;
     private final StageAnchorTransactionRepository stageAnchorTransactionRepository;
+    private final BatchLockService batchLockService;
+
 
     public RecordServiceImpl(
             RecordRepository recordRepository,
@@ -53,7 +55,8 @@ public class RecordServiceImpl implements RecordService {
             IpfsService ipfsService,
             StageMerkleService stageMerkleService,
             DataEncryptionService dataEncryptionService,
-            StageAnchorTransactionRepository stageAnchorTransactionRepository
+            StageAnchorTransactionRepository stageAnchorTransactionRepository,
+            BatchLockService batchLockService
     ) {
         this.recordRepository = recordRepository;
         this.merkleService = merkleService;
@@ -61,6 +64,7 @@ public class RecordServiceImpl implements RecordService {
         this.stageMerkleService = stageMerkleService;
         this.dataEncryptionService = dataEncryptionService;
         this.stageAnchorTransactionRepository = stageAnchorTransactionRepository;
+        this.batchLockService = batchLockService;
     }
 
     private void validateStageCanAddRecord(
@@ -139,16 +143,21 @@ public class RecordServiceImpl implements RecordService {
     }
 
     private List<Record> createRecordsInternal(
-            Batch batch,
+            Batch requestedBatch,
             List<RecordRequest> requests,
             Role role,
             boolean verifiedTransport
     ) {
-        validateBatchRequired(batch);
+        validateBatchRequired(requestedBatch);
+
+        Batch batch = batchLockService.lock(
+                requestedBatch.getId()
+        );
 
         if (requests == null || requests.isEmpty()) {
             return List.of();
         }
+
 
         // Chặn trước khi hash hoặc upload dữ liệu lên IPFS.
         if (!verifiedTransport && requests.stream().anyMatch(request ->

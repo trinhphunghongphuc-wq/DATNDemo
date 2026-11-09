@@ -13,7 +13,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
+import org.springframework.http.HttpStatus;
+import java.util.Map;
 @RestController
 @RequestMapping("/api/verify")
 @PreAuthorize("hasRole('RETAILER')")
@@ -79,5 +80,13 @@ public class VerifyController {
                     "Bạn không có quyền xác minh lô hàng này."
             );
         }
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, String>> handleAccessDenied(
+            AccessDeniedException exception
+    ) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Map.of("message", exception.getMessage()));
     }
 }

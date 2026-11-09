@@ -17,21 +17,32 @@ public class CustomUserDetails implements UserDetails {
     private final String username;
     private final String password;
     private final Role role;
+    private final boolean enabled;
 
     public CustomUserDetails(User user) {
         this.id = user.getId();
         this.username = user.getUsername();
         this.password = user.getPassword();
         this.role = user.getRole();
+        this.enabled = Boolean.TRUE.equals(user.getEnabled());
     }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
+        return List.of(
+                new SimpleGrantedAuthority("ROLE_" + role.name())
+        );
     }
 
-    @Override public String getPassword() { return password; }
-    @Override public String getUsername() { return username; }
+    @Override
+    public String getPassword() {
+        return password;
+    }
+
+    @Override
+    public String getUsername() {
+        return username;
+    }
 
     @Override
     public boolean isAccountNonExpired() {
@@ -50,6 +61,6 @@ public class CustomUserDetails implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return true;
+        return enabled;
     }
 }

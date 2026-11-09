@@ -100,6 +100,13 @@ function LoginPage() {
             </p>
           </div>
 
+          {new URLSearchParams(window.location.search).get("reason") ===
+            "expired" && (
+              <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+                Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.
+              </p>
+            )}
+
           <form onSubmit={handleLogin} className="space-y-5">
             <div className="space-y-1.5">
               <label className="px-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">

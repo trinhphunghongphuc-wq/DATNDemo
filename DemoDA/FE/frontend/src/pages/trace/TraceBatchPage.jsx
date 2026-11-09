@@ -64,9 +64,9 @@ function formatDateTime(value) {
   return Number.isNaN(date.getTime())
     ? String(value)
     : date.toLocaleString("vi-VN", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      });
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
 }
 
 function RecordContent({ step, compact = false }) {
@@ -147,7 +147,7 @@ export default function TraceBatchPage() {
         if (active) {
           setError(
             err.response?.data?.message ??
-              "Không thể tải thông tin truy xuất của lô hàng."
+            "Không thể tải thông tin truy xuất của lô hàng."
           );
         }
       })
@@ -212,6 +212,19 @@ export default function TraceBatchPage() {
             <span className="font-semibold">
               {traceability.status}
             </span>
+          </p>
+          <p className="mt-3 text-sm">
+            Hạn sử dụng:{" "}
+            <strong>
+              {traceability.expiryDate
+                ? new Intl.DateTimeFormat("vi-VN", {
+                  timeZone: "UTC",
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                }).format(new Date(`${traceability.expiryDate}T00:00:00Z`))
+                : "Chưa có dữ liệu"}
+            </strong>
           </p>
         </header>
 

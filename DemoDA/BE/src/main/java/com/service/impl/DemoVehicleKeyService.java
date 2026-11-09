@@ -14,9 +14,16 @@ import java.util.Base64;
 @RequiredArgsConstructor
 public class DemoVehicleKeyService {
     private final VehicleRepository vehicleRepository;
+    private final DemoVehicleRunRegistry demoVehicleRunRegistry;
 
     @Transactional
     public long registerPublicKey(Long vehicleId, Long distributorId, String publicKeyBase64) {
+        if (demoVehicleRunRegistry.isBusy(vehicleId)) {
+            throw new IllegalStateException(
+                    "Xe đang bận chạy demo; không thể thay public key"
+            );
+        }
+
         try {
             KeyFactory.getInstance("Ed25519").generatePublic(
                     new X509EncodedKeySpec(Base64.getDecoder().decode(publicKeyBase64)));

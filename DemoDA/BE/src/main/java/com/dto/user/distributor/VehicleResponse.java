@@ -19,4 +19,5 @@ public class VehicleResponse {
 
     private Boolean active;
     private Long lastSequence;
+    private Boolean demoBusy;
 }

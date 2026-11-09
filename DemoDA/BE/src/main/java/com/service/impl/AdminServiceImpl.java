@@ -41,6 +41,7 @@ public class AdminServiceImpl implements AdminService {
     private final BatchRepository batchRepository;
     private final RecordRepository recordRepository;
     private final UserRepository userRepository;
+    private final BatchLockService batchLockService;
     private final BlockchainConnectionService blockchainConnectionService;
     private final StageAnchorTransactionRepository
             stageAnchorTransactionRepository;

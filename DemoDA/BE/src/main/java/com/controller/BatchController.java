@@ -18,6 +18,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 import java.util.List;
+import com.security.CustomUserDetails;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 @RestController
 @RequestMapping("/api/batches")
@@ -62,7 +64,20 @@ public class BatchController {
         );
     }
 
+    @GetMapping
+    @PreAuthorize(
+            "hasAnyRole('ADMIN', 'PRODUCER', 'DISTRIBUTOR', 'RETAILER')"
+    )
+    public ResponseEntity<List<BatchListResponse>> getAllBatches(
+            @AuthenticationPrincipal CustomUserDetails user
+    ) {
+        return ResponseEntity.ok(
+                batchService.getBatchesForUser(user)
+        );
+    }
+
     @GetMapping("/{id}")
+    @PreAuthorize("@batchAccess.canRead(#p0, authentication)")
     public ResponseEntity<BatchDetailResponse> getBatchById(
             @PathVariable Long id
     ) {
@@ -72,6 +87,7 @@ public class BatchController {
     }
 
     @GetMapping("/{batchId}/proof/{recordKey}")
+    @PreAuthorize("@batchAccess.canRead(#p0, authentication)")
     public ResponseEntity<ProofResponse> getProof(
             @PathVariable Long batchId,
             @PathVariable String recordKey
@@ -82,6 +98,7 @@ public class BatchController {
     }
 
     @GetMapping("/{batchId}/verify/{recordKey}")
+    @PreAuthorize("@batchAccess.canRead(#p0, authentication)")
     public ResponseEntity<VerifyResponse> verifyRecord(
             @PathVariable Long batchId,
             @PathVariable String recordKey
@@ -103,6 +120,7 @@ public class BatchController {
     }
 
     @PostMapping("/{batchId}/records")
+    @PreAuthorize("@batchAccess.canWrite(#p0, authentication)")
     public ResponseEntity<List<Record>> addRecordsToBatch(
             @PathVariable Long batchId,
             @RequestBody List<RecordRequest> requests,
@@ -127,12 +145,12 @@ public class BatchController {
         return ResponseEntity.ok(records);
     }
 
-    @GetMapping
-    public ResponseEntity<List<BatchListResponse>> getAllBatches() {
-        return ResponseEntity.ok(
-                batchService.getAllBatches()
-        );
-    }
+//    @GetMapping
+//    public ResponseEntity<List<BatchListResponse>> getAllBatches() {
+//        return ResponseEntity.ok(
+//                batchService.getAllBatches()
+//        );
+//    }
 
     private void rejectUnsignedTransport(
             List<RecordRequest> requests

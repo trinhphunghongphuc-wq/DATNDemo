@@ -45,6 +45,9 @@ public class DistributorServiceImpl implements DistributorService {
     private final VehicleRepository vehicleRepository;
     private final DeviceSignatureService deviceSignatureService;
     private ProductCategoryResponse productCategory;
+    private final DemoVehicleRunRegistry demoVehicleRunRegistry;
+    private final BatchLockService batchLockService;
+
 
     @Override
     public List<AdminBatchListResponse> getAssignedBatches(
@@ -119,7 +122,9 @@ public class DistributorServiceImpl implements DistributorService {
          * chỉ một request được quyền kiểm tra và cập nhật sequence
          * tại một thời điểm.
          */
+        demoVehicleRunRegistry.checkTransportAllowed(request.getVehicleId());
         Vehicle vehicle = vehicleRepository
+
                 .findActiveVehicleForUpdate(
                         request.getVehicleId(),
                         distributorId
@@ -152,14 +157,7 @@ public class DistributorServiceImpl implements DistributorService {
 
         long expectedSequence = lastSequence + 1L;
 
-        if (!request.getSequence().equals(expectedSequence)) {
-            throw new IllegalArgumentException(
-                    "Invalid device sequence. Expected "
-                            + expectedSequence
-                            + " but received "
-                            + request.getSequence()
-            );
-        }
+
 
         try {
             /*
@@ -194,9 +192,20 @@ public class DistributorServiceImpl implements DistributorService {
                             vehicle.getDevicePublicKey()
                     );
 
+
+
             if (!signatureValid) {
                 throw new IllegalArgumentException(
                         "Invalid device signature"
+                );
+            }
+
+            if (!request.getSequence().equals(expectedSequence)) {
+                throw new IllegalArgumentException(
+                        "Invalid device sequence. Expected "
+                                + expectedSequence
+                                + " but received "
+                                + request.getSequence()
                 );
             }
 
@@ -215,10 +224,8 @@ public class DistributorServiceImpl implements DistributorService {
             vehicleRepository.save(vehicle);
 
             // Lưu chữ ký cùng dữ liệu cảm biến.
-            transportPayload.put(
-                    "deviceSignature",
-                    request.getDeviceSignature()
-            );
+            transportPayload.put("deviceSignature", request.getDeviceSignature());
+            transportPayload.put("devicePublicKeyAtSigning", vehicle.getDevicePublicKey());
 
             RecordRequest recordRequest =
                     new RecordRequest();
@@ -333,6 +340,11 @@ public class DistributorServiceImpl implements DistributorService {
                 batchId,
                 distributorId
         );
+        if (demoVehicleRunRegistry.isBusyForBatch(batchId)) {
+            throw new IllegalStateException(
+                    "Hãy đợi demo kết thúc hoặc dừng demo trước khi xác nhận giao hàng"
+            );
+        }
 
         if (batch.getStatus()
                 != BatchStatus.IN_DISTRIBUTION) {

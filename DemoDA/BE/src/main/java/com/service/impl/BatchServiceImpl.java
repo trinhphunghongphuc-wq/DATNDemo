@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.repository.BatchRepository;
 import com.repository.ProductCategoryRepository;
 import com.repository.RecordRepository;
+import com.security.CustomUserDetails;
 import com.service.BatchService;
 import com.service.MerkleService;
 import com.service.RecordService;
@@ -23,6 +24,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import com.security.CustomUserDetails;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.transaction.annotation.Transactional;
 import com.dto.product.ProductCategoryResponse;
 
 @Service
@@ -50,6 +54,7 @@ public class BatchServiceImpl implements BatchService {
     }
 
     @Override
+    @Transactional
     public BatchResponse createBatch(BatchRequest request, Role role) {
         Batch savedBatch = createBatchEntity(request, role);
 
@@ -67,6 +72,7 @@ public class BatchServiceImpl implements BatchService {
     }
 
     @Override
+    @Transactional
     public Batch createBatchEntity(BatchRequest request, Role role) {
 
         boolean hasDistributor = request.getDistributorId() != null;
@@ -311,6 +317,56 @@ public class BatchServiceImpl implements BatchService {
                 .records(recordItems)
                 .productCategory(toProductCategoryResponse(batch.getProductCategory()))
                 .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<BatchListResponse> getBatchesForUser(
+            CustomUserDetails user
+    ) {
+        if (user == null || !user.isEnabled()) {
+            throw new AccessDeniedException(
+                    "Bạn không có quyền xem danh sách lô hàng."
+            );
+        }
+
+        List<Batch> batches = switch (user.getRole()) {
+            case ADMIN ->
+                    batchRepository.findAll();
+
+            case PRODUCER ->
+                    batchRepository
+                            .findByCreatedByUsernameOrderByCreatedAtDesc(
+                                    user.getUsername()
+                            );
+
+            case DISTRIBUTOR ->
+                    batchRepository.findByDistributorId(user.getId());
+
+            case RETAILER ->
+                    batchRepository.findByRetailerId(user.getId());
+
+            case CONSUMER ->
+                    throw new AccessDeniedException(
+                            "Bạn không có quyền xem danh sách lô hàng nội bộ."
+                    );
+        };
+
+        return batches.stream()
+                .map(batch -> BatchListResponse.builder()
+                        .id(batch.getId())
+                        .name(batch.getName())
+                        .batchCode(batch.getBatchCode())
+                        .merkleRoot(batch.getMerkleRoot())
+                        .chainTxHash(batch.getChainTxHash())
+                        .status(batch.getStatus())
+                        .anchorStatus(batch.getAnchorStatus())
+                        .recordCount(
+                                recordRepository.countByBatchId(batch.getId())
+                        )
+                        .createdAt(batch.getCreatedAt())
+                        .build())
+                .toList();
     }
 
     private String generateBatchCode() {

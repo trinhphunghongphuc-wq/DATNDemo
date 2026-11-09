@@ -1,5 +1,6 @@
 package com.dto.product;
 
+import java.time.LocalDate;
 import java.util.List;
 
 public class TraceabilityResponse {
@@ -10,18 +11,20 @@ public class TraceabilityResponse {
     private String chainTxHash;
     private String status;
     private List<TraceabilityStepResponse> steps;
+    private LocalDate expiryDate;
 
     public TraceabilityResponse() {
     }
 
     public TraceabilityResponse(Long batchId, String batchName, String merkleRoot,
-                                String chainTxHash, String status, List<TraceabilityStepResponse> steps) {
+                                String chainTxHash, String status, List<TraceabilityStepResponse> steps, LocalDate expiryDate) {
         this.batchId = batchId;
         this.batchName = batchName;
         this.merkleRoot = merkleRoot;
         this.chainTxHash = chainTxHash;
         this.status = status;
         this.steps = steps;
+        this.expiryDate = expiryDate;
     }
 
     public Long getBatchId() {
@@ -70,5 +73,13 @@ public class TraceabilityResponse {
 
     public void setSteps(List<TraceabilityStepResponse> steps) {
         this.steps = steps;
+    }
+
+    public void setExpiryDate(LocalDate expiryDate) {
+        this.expiryDate = expiryDate;
+    }
+
+    public LocalDate getExpiryDate() {
+        return expiryDate;
     }
 }

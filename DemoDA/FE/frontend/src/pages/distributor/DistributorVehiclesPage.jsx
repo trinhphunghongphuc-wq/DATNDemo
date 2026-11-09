@@ -18,11 +18,35 @@ export default function DistributorVehiclesPage() {
   }
 
   useEffect(() => {
-    loadVehicles()
-      .catch((err) =>
-        setError(err.response?.data?.message ?? "Không tải được danh sách xe.")
-      )
-      .finally(() => setLoading(false));
+    let active = true;
+
+    async function refresh() {
+      try {
+        const response = await getVehicles();
+        if (active) {
+          setVehicles(response.data ?? []);
+          setError("");
+        }
+      } catch (err) {
+        if (active) {
+          setError(err.response?.data?.message ?? "Không tải được danh sách xe.");
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    refresh();
+    const timer = window.setInterval(refresh, 5000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   async function handleSubmit(event) {
@@ -122,6 +146,7 @@ export default function DistributorVehiclesPage() {
                 <th className="p-4">Mã thiết bị</th>
                 <th className="p-4">Firmware</th>
                 <th className="p-4">Sequence cuối</th>
+                <th className="p-4">Tình trạng</th>
               </tr>
             </thead>
             <tbody>
@@ -131,6 +156,19 @@ export default function DistributorVehiclesPage() {
                   <td className="p-4">{vehicle.deviceId}</td>
                   <td className="p-4">{vehicle.sensorFirmware}</td>
                   <td className="p-4">{vehicle.lastSequence ?? 0}</td>
+                  <td className="p-4">
+                    {vehicle.demoBusy === true ? (
+                      <span className="rounded-full bg-amber-500/15 px-2 py-1 text-amber-300">
+                        Bận
+                      </span>
+                    ) : vehicle.demoBusy === false ? (
+                      <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-emerald-300">
+                        Rảnh
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">Chưa có trạng thái</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

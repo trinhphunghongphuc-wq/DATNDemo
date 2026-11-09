@@ -38,6 +38,16 @@ export default function RetailUnitsPage() {
     currentPage * pageSize
   );
 
+  const [editingPriceId, setEditingPriceId] = useState(null);
+  const [priceInput, setPriceInput] = useState("");
+  const [priceHistory, setPriceHistory] = useState({});
+  const [savingPrice, setSavingPrice] = useState(false);
+
+  const formatPrice = (value) =>
+    value == null
+      ? "Chưa có giá"
+      : `${new Intl.NumberFormat("vi-VN").format(value)} ₫`;
+
 
   useEffect(() => {
     let active = true;
@@ -132,6 +142,86 @@ export default function RetailUnitsPage() {
     }
   }
 
+  function openPriceForm(unit) {
+    setError("");
+    setNotice("");
+    setEditingPriceId(unit.id);
+    setPriceInput(
+      String(
+        unit.type === "PACKAGED"
+          ? unit.pricePerPackage ?? ""
+          : unit.pricePerKg ?? ""
+      )
+    );
+  }
+
+  async function savePrice(event, unit) {
+    event.preventDefault();
+
+    const price = Number(priceInput);
+    if (!Number.isFinite(price) || price <= 0) {
+      setError("Giá phải lớn hơn 0.");
+      return;
+    }
+
+    try {
+      setSavingPrice(true);
+      setError("");
+
+      const response = await axiosClient.put(
+        `/retailer/retail-units/${unit.id}/price`,
+        { price }
+      );
+
+      setUnits((old) =>
+        old.map((item) =>
+          item.id === unit.id ? response.data : item
+        )
+      );
+      setEditingPriceId(null);
+      setNotice(`Đã cập nhật giá cho ${unit.retailCode}.`);
+
+      // Nếu lịch sử đang mở, lấy lại dữ liệu mới.
+      if (priceHistory[unit.id]) {
+        const historyResponse = await axiosClient.get(
+          `/retailer/retail-units/${unit.id}/price-history`
+        );
+        setPriceHistory((old) => ({
+          ...old,
+          [unit.id]: historyResponse.data ?? [],
+        }));
+      }
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSavingPrice(false);
+    }
+  }
+
+  async function togglePriceHistory(unit) {
+    if (priceHistory[unit.id]) {
+      setPriceHistory((old) => {
+        const next = { ...old };
+        delete next[unit.id];
+        return next;
+      });
+      return;
+    }
+
+    try {
+      setError("");
+      const response = await axiosClient.get(
+        `/retailer/retail-units/${unit.id}/price-history`
+      );
+      setPriceHistory((old) => ({
+        ...old,
+        [unit.id]: response.data ?? [],
+      }));
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div>
@@ -180,6 +270,92 @@ export default function RetailUnitsPage() {
                       Record tách lô: {unit.retailRecordKey}
                     </p>
                   )}
+
+                  <div className="mt-4 rounded-lg border border-slate-700 p-3 text-sm">
+                    <p className="font-semibold">
+                      Giá hiện tại:{" "}
+                      {formatPrice(
+                        unit.type === "PACKAGED"
+                          ? unit.pricePerPackage
+                          : unit.pricePerKg
+                      )}
+                      {unit.type === "PACKAGED" ? "/gói" : "/kg"}
+                    </p>
+
+                    {unit.priceUpdatedAt && (
+                      <p className="mt-1 text-xs text-slate-400">
+                        Cập nhật:{" "}
+                        {new Date(unit.priceUpdatedAt).toLocaleString("vi-VN")}
+                      </p>
+                    )}
+
+                    {unit.status !== "SOLD_OUT" && (
+                      editingPriceId === unit.id ? (
+                        <form
+                          onSubmit={(event) => savePrice(event, unit)}
+                          className="mt-3 flex flex-wrap items-center gap-2"
+                        >
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            required
+                            value={priceInput}
+                            onChange={(event) => setPriceInput(event.target.value)}
+                            className="w-40 rounded-lg border border-slate-600 bg-[#0b1020] p-2"
+                          />
+                          <button
+                            type="submit"
+                            disabled={savingPrice}
+                            className="rounded-lg bg-blue-600 px-3 py-2 disabled:opacity-50"
+                          >
+                            {savingPrice ? "Đang lưu..." : "Lưu giá"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingPriceId(null)}
+                            className="text-slate-400"
+                          >
+                            Hủy
+                          </button>
+                        </form>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => openPriceForm(unit)}
+                          className="mt-3 text-blue-400 hover:underline"
+                        >
+                          Điều chỉnh giá
+                        </button>
+                      )
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => togglePriceHistory(unit)}
+                      className="mt-3 block text-slate-400 hover:underline"
+                    >
+                      {priceHistory[unit.id]
+                        ? "Ẩn lịch sử giá"
+                        : "Xem lịch sử giá"}
+                    </button>
+
+                    {priceHistory[unit.id] && (
+                      <ul className="mt-2 space-y-2 text-xs text-slate-300">
+                        {priceHistory[unit.id].length === 0 ? (
+                          <li>Chưa có lần điều chỉnh giá.</li>
+                        ) : (
+                          priceHistory[unit.id].map((item, index) => (
+                            <li key={`${item.changedAt}-${index}`}>
+                              {formatPrice(item.oldPrice)} →{" "}
+                              {formatPrice(item.newPrice)} ·{" "}
+                              {new Date(item.changedAt).toLocaleString("vi-VN")}
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                    )}
+                  </div>
 
                   <div className="mt-4 inline-block rounded-lg bg-white p-3">
                     <QRCodeCanvas

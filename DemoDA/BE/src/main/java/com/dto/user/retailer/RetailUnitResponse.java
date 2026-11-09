@@ -5,6 +5,7 @@ import com.enums.RetailUnitType;
 import lombok.Builder;
 import lombok.Data;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -53,5 +54,7 @@ public class RetailUnitResponse {
     private String retailRecordKey;
 
     private boolean retailerRecordingClosed;
+
+    private Instant priceUpdatedAt;
 }
 
