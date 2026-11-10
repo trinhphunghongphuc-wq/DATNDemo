@@ -177,10 +177,7 @@ public class AdminServiceImpl implements AdminService {
             throw new IllegalArgumentException("Record stage is required");
         }
 
-        Batch batch = batchRepository.findById(batchId)
-                .orElseThrow(() -> new RuntimeException(
-                        "Batch not found with id: " + batchId
-                ));
+        Batch batch = batchLockService.lock(batchId);
 
         boolean alreadyAnchored =
                 stageAnchorTransactionRepository
@@ -242,17 +239,14 @@ public class AdminServiceImpl implements AdminService {
 
             return mapBatchToAdminResponse(batch);
 
-        } catch (Exception exception) {
-            batch.setAnchorStatus(AnchorStatus.ANCHOR_FAILED);
-            batchRepository.save(batch);
-
-            throw new RuntimeException(
-                    "Failed to anchor " + stage
-                            + " Merkle root: "
-                            + exception.getMessage(),
-                    exception
-            );
-        }
+        }  catch (Exception exception) {
+        throw new RuntimeException(
+                "Failed to anchor " + stage
+                        + " Merkle root: "
+                        + exception.getMessage(),
+                exception
+        );
+    }
     }
 
     private String resolveStageRoot(

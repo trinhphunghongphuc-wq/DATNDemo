@@ -60,14 +60,18 @@ public class DistributorServiceImpl implements DistributorService {
     }
 
     @Override
+    @Transactional
     public AdminBatchListResponse receiveBatch(
             Long batchId,
             Long distributorId
     ) {
+        batchLockService.lock(batchId);
+
         Batch batch = getBatchForDistributor(
                 batchId,
                 distributorId
         );
+
 
         if (batch.getStatus() == BatchStatus.RECEIVED_BY_DISTRIBUTOR) {
             throw new IllegalStateException(
@@ -99,6 +103,9 @@ public class DistributorServiceImpl implements DistributorService {
             TransportSensorRecordRequest request,
             Long distributorId
     ) {
+
+        batchLockService.lock(batchId);
+
         Batch batch = getBatchForDistributor(
                 batchId,
                 distributorId
@@ -332,10 +339,13 @@ public class DistributorServiceImpl implements DistributorService {
     }
 
     @Override
+    @Transactional
     public AdminBatchListResponse DeliveryToDetailer(
             Long batchId,
             Long distributorId
     ) {
+        batchLockService.lock(batchId);
+
         Batch batch = getBatchForDistributor(
                 batchId,
                 distributorId
@@ -399,7 +409,13 @@ public class DistributorServiceImpl implements DistributorService {
             RecordRequest request,
             Long distributorId
     ) {
-        Batch batch = getBatchForDistributor(batchId, distributorId);
+        batchLockService.lock(batchId);
+
+        Batch batch = getBatchForDistributor(
+                batchId,
+                distributorId
+        );
+
         if (batch.getStatus() != BatchStatus.RECEIVED_BY_DISTRIBUTOR
                 && batch.getStatus() != BatchStatus.IN_DISTRIBUTION) {
             throw new IllegalStateException("Distributor must receive batch before adding warehouse record");
@@ -428,7 +444,13 @@ public class DistributorServiceImpl implements DistributorService {
             ReturnReceiptRequest request,
             Long distributorId
     ) {
-        Batch batch = getBatchForDistributor(batchId, distributorId);
+        batchLockService.lock(batchId);
+
+        Batch batch = getBatchForDistributor(
+                batchId,
+                distributorId
+        );
+
 
         if (batch.getStatus() != BatchStatus.DELIVERY_REJECTED) {
             throw new IllegalStateException("Batch has not been rejected by retailer");

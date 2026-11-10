@@ -1,7 +1,7 @@
 package com.dto.batch;
 
 import lombok.Data;
-
+import com.enums.RecordStage;
 import java.util.List;
 
 @Data
@@ -14,6 +14,10 @@ public class ProofResponse {
     private String merkleRoot;
     private List<String> proof;
     private String chainTxHash;
+    private RecordStage recordStage;
+    private Integer stageLeafIndex;
+    private String stageRoot;
+    private boolean valid;
 
     public ProofResponse() {
     }

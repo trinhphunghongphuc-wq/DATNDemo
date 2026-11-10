@@ -105,14 +105,7 @@ public class BatchController {
     ) {
         VerifyRequest request = new VerifyRequest();
         request.setBatchId(batchId);
-
-        Record record = recordRepository
-                .findByBatchIdAndRecordKey(batchId, recordKey)
-                .orElseThrow(() ->
-                        new RuntimeException("Record not found")
-                );
-
-        request.setRawJson(record.getRawJson());
+        request.setRecordKey(recordKey);
 
         return ResponseEntity.ok(
                 verifyService.verify(request)

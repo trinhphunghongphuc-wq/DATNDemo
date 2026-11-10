@@ -28,6 +28,10 @@ import com.security.CustomUserDetails;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.annotation.Transactional;
 import com.dto.product.ProductCategoryResponse;
+import com.service.VerifyService;
+import com.dto.verify.MerkleProofResponse;
+import com.repository.StageAnchorTransactionRepository;
+
 
 @Service
 public class BatchServiceImpl implements BatchService {
@@ -39,11 +43,14 @@ public class BatchServiceImpl implements BatchService {
     private final RecordRepository recordRepository;
     private final ObjectMapper objectMapper;
     private final ProductCategoryRepository productCategoryRepository;
+    private final VerifyService verifyService;
+    private final StageAnchorTransactionRepository stageAnchorTransactionRepository;
+
 
     public BatchServiceImpl(BatchRepository batchRepository,
                             RecordService recordService,
                             MerkleService merkleService,
-                            BlockchainConnectionService blockchainConnectionService, RecordRepository recordRepository, ObjectMapper objectMapper, ProductCategoryRepository productCategoryRepository) {
+                            BlockchainConnectionService blockchainConnectionService, RecordRepository recordRepository, ObjectMapper objectMapper, ProductCategoryRepository productCategoryRepository, VerifyService verifyService, StageAnchorTransactionRepository stageAnchorTransactionRepository) {
         this.batchRepository = batchRepository;
         this.recordService = recordService;
         this.merkleService = merkleService;
@@ -51,6 +58,8 @@ public class BatchServiceImpl implements BatchService {
         this.recordRepository = recordRepository;
         this.objectMapper = objectMapper;
         this.productCategoryRepository = productCategoryRepository;
+        this.verifyService = verifyService;
+        this.stageAnchorTransactionRepository = stageAnchorTransactionRepository;
     }
 
     @Override
@@ -193,52 +202,70 @@ public class BatchServiceImpl implements BatchService {
     }
 
     @Override
-    public ProofResponse getProof(Long batchId, String recordKey) {
-        Batch batch = getBatchById(batchId);
-        Record targetRecord = recordService.getByBatchIdAndRecordKey(batchId, recordKey);
+    @Transactional(readOnly = true)
+    public ProofResponse getProof(
+            Long batchId,
+            String recordKey
+    ) {
+        // Dùng chung logic chọn cây theo stage với API verify mới.
+        MerkleProofResponse stageProof =
+                verifyService.generateMerkleProof(
+                        batchId,
+                        recordKey
+                );
 
-        List<Record> records = recordService.getRecordsByBatchId(batchId);
-        records.sort(Comparator.comparingInt(Record::getLeafIndex));
+        String chainTxHash;
 
-        List<String> leafHashes = records.stream()
-                .map(Record::getLeafHash)
-                .toList();
+        if (stageProof.getRecordStage() == null) {
+            // Tương thích record cũ dùng cây toàn batch.
+            Batch batch = getBatchById(batchId);
+            chainTxHash = batch.getChainTxHash();
+        } else {
+            // Lấy transaction của đúng stage, không lấy transaction
+            // cuối cùng của cả batch.
+            chainTxHash = stageAnchorTransactionRepository
+                    .findByBatch_IdAndRecordStage(
+                            batchId,
+                            stageProof.getRecordStage()
+                    )
+                    .map(anchor -> anchor.getTransactionHash())
+                    .orElse(null);
+        }
 
-        List<String> proof = merkleService.generateProof(leafHashes, targetRecord.getLeafIndex());
+        ProofResponse response = new ProofResponse();
 
-        return new ProofResponse(
-                batch.getId(),
-                targetRecord.getRecordKey(),
-                targetRecord.getLeafIndex(),
-                targetRecord.getLeafHash(),
-                batch.getMerkleRoot(),
-                proof,
-                batch.getChainTxHash()
-        );
+        response.setBatchId(stageProof.getBatchId());
+        response.setRecordKey(stageProof.getRecordKey());
+        response.setLeafHash(stageProof.getLeafHash());
+        response.setProof(stageProof.getProof());
+        response.setChainTxHash(chainTxHash);
+
+        response.setRecordStage(stageProof.getRecordStage());
+        response.setStageLeafIndex(stageProof.getStageLeafIndex());
+        response.setStageRoot(stageProof.getStageRoot());
+        response.setValid(stageProof.isValid());
+
+
+        response.setLeafIndex(stageProof.getStageLeafIndex());
+        response.setMerkleRoot(stageProof.getStageRoot());
+
+        return response;
     }
 
     @Override
-    public boolean verifyRecordProof(Long batchId, String recordKey) {
-        Batch batch = getBatchById(batchId);
-        Record targetRecord = recordService.getByBatchIdAndRecordKey(batchId, recordKey);
+    @Transactional(readOnly = true)
+    public boolean verifyRecordProof(
+            Long batchId,
+            String recordKey
+    ) {
+        MerkleProofResponse proof =
+                verifyService.generateMerkleProof(
+                        batchId,
+                        recordKey
+                );
 
-        List<Record> records = recordService.getRecordsByBatchId(batchId);
-        records.sort(Comparator.comparingInt(Record::getLeafIndex));
-
-        List<String> leafHashes = records.stream()
-                .map(Record::getLeafHash)
-                .toList();
-
-        List<String> proof = merkleService.generateProof(leafHashes, targetRecord.getLeafIndex());
-
-        return merkleService.verifyProof(
-                targetRecord.getLeafHash(),
-                proof,
-                batch.getMerkleRoot(),
-                targetRecord.getLeafIndex()
-        );
+        return proof.isValid();
     }
-
     private RecordItemResponse mapToRecordItem(Record record) {
         return new RecordItemResponse(
                 record.getId(),

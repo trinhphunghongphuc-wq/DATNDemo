@@ -62,8 +62,17 @@ public class RetailerServiceImpl implements RetailerService {
     }
 
     @Override
-    public AdminBatchListResponse receiveBatch(Long batchId, Long retailerId) {
-        Batch batch = getBatchForRetailer(batchId, retailerId);
+    @Transactional
+    public AdminBatchListResponse receiveBatch(
+            Long batchId,
+            Long retailerId
+    ) {
+        batchLockService.lock(batchId);
+
+        Batch batch = getBatchForRetailer(
+                batchId,
+                retailerId
+        );
 
         if (batch.getStatus() != BatchStatus.RECEIVED_BY_DISTRIBUTOR
                 && batch.getStatus() != BatchStatus.IN_DISTRIBUTION) {
@@ -77,8 +86,19 @@ public class RetailerServiceImpl implements RetailerService {
     }
 
     @Override
-    public RecordItemResponse addRetailRecord(Long batchId, RecordRequest request, Long retailerId) {
-        Batch batch = getBatchForRetailer(batchId, retailerId);
+    @Transactional
+    public RecordItemResponse addRetailRecord(
+            Long batchId,
+            RecordRequest request,
+            Long retailerId
+    ) {
+        batchLockService.lock(batchId);
+
+        Batch batch = getBatchForRetailer(
+                batchId,
+                retailerId
+        );
+
 
         if (batch.getStatus() != BatchStatus.AT_RETAIL) {
             throw new RuntimeException("Retailer must receive batch before adding retail record");
@@ -177,9 +197,18 @@ public class RetailerServiceImpl implements RetailerService {
 
 
     @Override
-    public AdminBatchListResponse confirmDelivery(Long batchId, Long retailerId) {
+    @Transactional
+    public AdminBatchListResponse confirmDelivery(
+            Long batchId,
+            Long retailerId
+    ) {
+        batchLockService.lock(batchId);
 
-        Batch batch = getBatchForRetailer(batchId, retailerId);
+        Batch batch = getBatchForRetailer(
+                batchId,
+                retailerId
+        );
+
 
         if (batch.getStatus() != BatchStatus.DELIVERED_TO_RETAILER) {
             throw new RuntimeException(
@@ -202,7 +231,13 @@ public class RetailerServiceImpl implements RetailerService {
             Long retailerId,
             RejectDeliveryRequest request
     ) {
-        Batch batch = getBatchForRetailer(batchId, retailerId);
+        batchLockService.lock(batchId);
+
+        Batch batch = getBatchForRetailer(
+                batchId,
+                retailerId
+        );
+
 
         if (batch.getStatus() != BatchStatus.DELIVERED_TO_RETAILER) {
             throw new IllegalStateException("Batch is not delivered to retailer yet");
