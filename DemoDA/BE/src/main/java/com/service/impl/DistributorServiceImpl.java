@@ -47,6 +47,7 @@ public class DistributorServiceImpl implements DistributorService {
     private ProductCategoryResponse productCategory;
     private final DemoVehicleRunRegistry demoVehicleRunRegistry;
     private final BatchLockService batchLockService;
+    private final NotificationService notificationService;
 
 
     @Override
@@ -370,6 +371,8 @@ public class DistributorServiceImpl implements DistributorService {
 
         Batch savedBatch =
                 batchRepository.save(batch);
+
+        notificationService.batchDelivered(savedBatch);
 
         return toBatchListResponse(savedBatch);
     }

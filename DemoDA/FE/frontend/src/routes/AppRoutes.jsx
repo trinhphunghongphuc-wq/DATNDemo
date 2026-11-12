@@ -11,6 +11,7 @@ import TraceBatchPage from "../pages/trace/TraceBatchPage";
 import TraceRetailUnitPage from "../pages/trace/TraceRetailUnitPage";
 
 import DashboardLayout from "../layouts/DashboardLayout";
+import NotificationsPage from "../pages/notifications/NotificationsPage";
 import BatchQrPage from "../pages/batches/BatchQrPage";
 
 import ProducerBatchesPage from "../pages/producer/ProducerBatchesPage";
@@ -138,6 +139,10 @@ export default function AppRoutes() {
           path="/dashboard"
           element={<DashboardHome />}
         />
+
+        <Route element={<RoleRoute allowedRoles={["ADMIN", "PRODUCER", "DISTRIBUTOR", "RETAILER"]} />}>
+          <Route path="/notifications" element={<NotificationsPage />} />
+        </Route>
 
         {/* Admin */}
         <Route element={<RoleRoute allowedRoles={["ADMIN"]} />}>

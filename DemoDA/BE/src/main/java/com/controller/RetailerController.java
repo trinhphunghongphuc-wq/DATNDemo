@@ -1,5 +1,8 @@
 package com.controller;
 
+import com.dto.batch.BatchPageResponse;
+import com.service.impl.BatchSearchService;
+
 import com.dto.batch.AdminBatchListResponse;
 import com.dto.batch.BatchDetailResponse;
 import com.dto.record.RecordItemResponse;
@@ -34,11 +37,17 @@ public class RetailerController {
     private final RetailerService retailerService;
     private final RetailUnitService retailUnitService;
     private final IpfsService ipfsService;
+    private final BatchSearchService batchSearchService;
 
     @GetMapping("/batches")
-    public ResponseEntity<List<AdminBatchListResponse>> getReceivedBatches(Authentication authentication) {
-        Long retailerId = getCurrentUserId(authentication);
-        return ResponseEntity.ok(retailerService.getReceivedBatches(retailerId));
+    public ResponseEntity<BatchPageResponse> getReceivedBatches(
+            Authentication authentication,
+            @RequestParam(defaultValue = "") String keyword,
+            @RequestParam(defaultValue = "") String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(batchSearchService.search(
+                (CustomUserDetails) authentication.getPrincipal(), keyword, status, page, size));
     }
 
 //    @PostMapping("/batches/{batchId}/receive")

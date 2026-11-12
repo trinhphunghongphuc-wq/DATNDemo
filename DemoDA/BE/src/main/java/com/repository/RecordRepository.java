@@ -14,6 +14,17 @@ import com.enums.RecordType;
 
 @Repository
 public interface RecordRepository extends JpaRepository<com.entity.Record, Long> {
+    interface BatchRecordCount {
+        Long getBatchId();
+        Long getRecordCount();
+    }
+
+    @Query("""
+        select r.batch.id as batchId, count(r) as recordCount
+        from Record r where r.batch.id in :batchIds group by r.batch.id
+        """)
+    List<BatchRecordCount> countRecordsForBatches(@Param("batchIds") List<Long> batchIds);
+
     List<Record> findByBatchId(Long batchId);
     Record findByRecordKey(String recordKey);
     Optional<Record> findByBatchIdAndRecordKey(Long batchId, String recordKey);

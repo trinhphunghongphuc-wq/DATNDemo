@@ -1,5 +1,8 @@
 package com.controller;
 
+import com.dto.batch.BatchPageResponse;
+import com.service.impl.BatchSearchService;
+
 import com.dto.batch.AdminBatchListResponse;
 import com.dto.batch.BatchDetailResponse;
 import com.dto.record.RecordItemResponse;
@@ -29,13 +32,18 @@ public class DistributorController {
 
     private final DistributorService distributorService;
     private final VehicleService vehicleService;
+    private final BatchSearchService batchSearchService;
 
     @GetMapping("/batches")
-    public ResponseEntity<List<AdminBatchListResponse>> getAssignedBatches(
-            Authentication authentication
+    public ResponseEntity<BatchPageResponse> getAssignedBatches(
+            Authentication authentication,
+            @RequestParam(defaultValue = "") String keyword,
+            @RequestParam(defaultValue = "") String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
     ) {
-        Long distributorId = getCurrentUserId(authentication);
-        return ResponseEntity.ok(distributorService.getAssignedBatches(distributorId));
+        return ResponseEntity.ok(batchSearchService.search(
+                (CustomUserDetails) authentication.getPrincipal(), keyword, status, page, size));
     }
 
     @PostMapping("/batches/{batchId}/receive")

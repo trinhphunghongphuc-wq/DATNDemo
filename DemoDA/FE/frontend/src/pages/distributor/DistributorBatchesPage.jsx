@@ -1,52 +1,25 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  getDistributorBatches,
   receiveDistributorBatch,
 } from "../../api/distributorApi";
 import Pagination from "../../components/common/Pagination";
+import BatchSearchToolbar from "../../components/common/BatchSearchToolbar";
+import useBatchSearch from "../../hooks/useBatchSearch";
 
 export default function DistributorBatchesPage() {
-  const [batches, setBatches] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const list = useBatchSearch("/distributor/batches");
+  const batches = list.items;
+  const loading = list.loading;
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState("");
-  const [page, setPage] = useState(1);
-
-  const pageSize = 8;
-  const totalPages = Math.ceil(batches.length / pageSize);
-  const currentPage = Math.min(page, Math.max(totalPages, 1));
-
-  const visibleBatches = batches.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  );
-
-  async function loadBatches() {
-    try {
-      setLoading(true);
-      setError("");
-      const response = await getDistributorBatches();
-      setBatches(response.data ?? []);
-    } catch (err) {
-      setError(
-        err.response?.data?.message ?? "Không tải được danh sách lô hàng."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadBatches();
-  }, []);
 
   async function handleReceive(batchId) {
     try {
       setBusyId(batchId);
       setError("");
       await receiveDistributorBatch(batchId);
-      await loadBatches();
+      list.reload();
     } catch (err) {
       setError(
         err.response?.data?.message ?? "Không thể nhận lô hàng."
@@ -65,9 +38,11 @@ export default function DistributorBatchesPage() {
         </p>
       </div>
 
-      {error && (
+      <BatchSearchToolbar list={list} role="DISTRIBUTOR" />
+
+      {(error || list.error) && (
         <p className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
-          {error}
+          {error || list.error}
         </p>
       )}
 
@@ -75,12 +50,12 @@ export default function DistributorBatchesPage() {
         <p className="text-slate-400">Đang tải lô hàng...</p>
       ) : batches.length === 0 ? (
         <p className="text-slate-400">
-          Chưa có lô hàng được phân công.
+          Không có lô hàng phù hợp.
         </p>
       ) : (
         <>
           <div className="grid gap-4 md:grid-cols-2">
-            {visibleBatches.map((batch) => (
+            {batches.map((batch) => (
               <article
                 key={batch.id}
                 className="rounded-2xl border border-slate-800 bg-[#111827] p-5"
@@ -95,6 +70,9 @@ export default function DistributorBatchesPage() {
                 <h2 className="mt-3 text-lg font-semibold">
                   {batch.name}
                 </h2>
+                <p className="mt-2 text-sm text-slate-400">
+                  Mã lô: {batch.batchCode}
+                </p>
                 <p className="mt-2 text-sm text-slate-400">
                   Batch ID: {batch.id}
                 </p>
@@ -122,9 +100,9 @@ export default function DistributorBatchesPage() {
           </div>
 
           <Pagination
-            page={currentPage}
-            totalPages={totalPages}
-            onPageChange={setPage}
+            page={list.page}
+            totalPages={list.totalPages}
+            onPageChange={list.setPage}
           />
         </>
       )}

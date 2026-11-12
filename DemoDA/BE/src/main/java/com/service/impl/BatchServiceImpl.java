@@ -45,12 +45,13 @@ public class BatchServiceImpl implements BatchService {
     private final ProductCategoryRepository productCategoryRepository;
     private final VerifyService verifyService;
     private final StageAnchorTransactionRepository stageAnchorTransactionRepository;
+    private final NotificationService notificationService;
 
 
     public BatchServiceImpl(BatchRepository batchRepository,
                             RecordService recordService,
                             MerkleService merkleService,
-                            BlockchainConnectionService blockchainConnectionService, RecordRepository recordRepository, ObjectMapper objectMapper, ProductCategoryRepository productCategoryRepository, VerifyService verifyService, StageAnchorTransactionRepository stageAnchorTransactionRepository) {
+                            BlockchainConnectionService blockchainConnectionService, RecordRepository recordRepository, ObjectMapper objectMapper, ProductCategoryRepository productCategoryRepository, VerifyService verifyService, StageAnchorTransactionRepository stageAnchorTransactionRepository, NotificationService notificationService) {
         this.batchRepository = batchRepository;
         this.recordService = recordService;
         this.merkleService = merkleService;
@@ -60,6 +61,7 @@ public class BatchServiceImpl implements BatchService {
         this.productCategoryRepository = productCategoryRepository;
         this.verifyService = verifyService;
         this.stageAnchorTransactionRepository = stageAnchorTransactionRepository;
+        this.notificationService = notificationService;
     }
 
     @Override
@@ -170,7 +172,9 @@ public class BatchServiceImpl implements BatchService {
                 merkleService.buildMerkleRoot(leafHashes)
         );
 
-        return batchRepository.save(savedBatch);
+        Batch result = batchRepository.save(savedBatch);
+        notificationService.batchAssigned(result);
+        return result;
     }
 
 

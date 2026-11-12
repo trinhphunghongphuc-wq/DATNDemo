@@ -14,6 +14,7 @@ import {
   getDistributorBatchDetail,
   getTransportJourney,
   planTransportRoute,
+  receiveDistributorBatch,
 } from "../../api/distributorApi";
 import axiosClient from "../../api/axiosClient";
 import Pagination from "../../components/common/Pagination";
@@ -226,6 +227,7 @@ export default function DistributorJourneyPage() {
   const [saving, setSaving] = useState(false);
   const [savingWarehouse, setSavingWarehouse] = useState(false);
   const [savingDelivery, setSavingDelivery] = useState(false);
+  const [receivingBatch, setReceivingBatch] = useState(false);
   const [vehicles, setVehicles] = useState([]);
   const [vehicleId, setVehicleId] = useState("");
   const [demoCount, setDemoCount] = useState(8);
@@ -712,6 +714,23 @@ export default function DistributorJourneyPage() {
     }
   }
 
+  async function handleReceiveBatch() {
+    if (receivingBatch || batch?.status !== "ASSIGNED_TO_DISTRIBUTOR") return;
+    setReceivingBatch(true);
+    setError("");
+    setNotice("");
+    try {
+      const { data } = await receiveDistributorBatch(batchId);
+      // Receive returns the list DTO; retain detail fields such as productCategory.
+      setBatch((current) => ({ ...current, ...data }));
+      setNotice("Đã xác nhận nhận hàng. Bạn có thể lập tuyến và bắt đầu vận chuyển.");
+    } catch (err) {
+      setError(err.response?.data?.message ?? "Không thể xác nhận nhận hàng. Hãy thử lại.");
+    } finally {
+      setReceivingBatch(false);
+    }
+  }
+
   async function handleRefresh() {
     try {
       setError("");
@@ -794,9 +813,17 @@ export default function DistributorJourneyPage() {
             Batch #{batchId} · {batch?.status ?? "Không rõ trạng thái"}
           </p>
         </div>
-        <button type="button" onClick={handleRefresh} className="rounded-lg border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800">
-          Cập nhật GPS
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {batch?.status === "ASSIGNED_TO_DISTRIBUTOR" && (
+            <button type="button" onClick={handleReceiveBatch} disabled={receivingBatch}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold hover:bg-blue-500 disabled:opacity-50">
+              {receivingBatch ? "Đang xác nhận..." : "Xác nhận nhận hàng"}
+            </button>
+          )}
+          <button type="button" onClick={handleRefresh} className="rounded-lg border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800">
+            Cập nhật GPS
+          </button>
+        </div>
       </div>
       {error && (
         <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-300">{error}</p>

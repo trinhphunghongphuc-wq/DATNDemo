@@ -1,46 +1,12 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import axiosClient from "../../api/axiosClient";
 import Pagination from "../../components/common/Pagination";
+import BatchSearchToolbar from "../../components/common/BatchSearchToolbar";
+import useBatchSearch from "../../hooks/useBatchSearch";
 
 export default function RetailerBatchesPage() {
-  const [batches, setBatches] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [page, setPage] = useState(1);
-
-  const pageSize = 8;
-  const totalPages = Math.ceil(batches.length / pageSize);
-  const currentPage = Math.min(page, Math.max(totalPages, 1));
-  const visibleBatches = batches.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  );
-
-  useEffect(() => {
-    let active = true;
-
-    axiosClient
-      .get("/retailer/batches")
-      .then((response) => {
-        if (active) setBatches(response.data ?? []);
-      })
-      .catch((err) => {
-        if (active) {
-          setError(
-            err.response?.data?.message ??
-              "Không tải được danh sách lô."
-          );
-        }
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
+  const list = useBatchSearch("/retailer/batches");
+  const batches = list.items;
+  const { loading, error } = list;
 
   return (
     <div className="space-y-5">
@@ -51,6 +17,8 @@ export default function RetailerBatchesPage() {
         </p>
       </div>
 
+      <BatchSearchToolbar list={list} role="RETAILER" />
+
       {error && (
         <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-300">
           {error}
@@ -60,16 +28,17 @@ export default function RetailerBatchesPage() {
       {loading ? (
         <p className="text-slate-400">Đang tải...</p>
       ) : batches.length === 0 ? (
-        <p className="text-sm text-slate-400">Chưa có lô được gán.</p>
+        <p className="text-sm text-slate-400">Không có lô hàng phù hợp.</p>
       ) : (
         <>
           <div className="grid gap-4 md:grid-cols-2">
-            {visibleBatches.map((batch) => (
+            {batches.map((batch) => (
               <article
                 key={batch.id}
                 className="rounded-xl border border-slate-800 bg-[#111827] p-4"
               >
                 <h2 className="font-semibold">{batch.name}</h2>
+                <p className="mt-1 text-xs text-blue-400">{batch.batchCode}</p>
                 <p className="mt-1 text-sm text-slate-400">
                   Batch #{batch.id} · {batch.status} ·{" "}
                   {batch.recordCount ?? 0} record
@@ -84,11 +53,11 @@ export default function RetailerBatchesPage() {
             ))}
           </div>
 
-          {totalPages > 1 && (
+          {list.totalPages > 1 && (
             <Pagination
-              page={currentPage}
-              totalPages={totalPages}
-              onPageChange={setPage}
+              page={list.page}
+              totalPages={list.totalPages}
+              onPageChange={list.setPage}
             />
           )}
         </>

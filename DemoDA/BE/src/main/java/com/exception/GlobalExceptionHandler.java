@@ -1,11 +1,14 @@
 package com.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
 
 import java.time.LocalDateTime;
 import java.util.stream.Collectors;
@@ -16,6 +19,31 @@ import org.springframework.security.core.AuthenticationException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleDisconnectedClient(
+            AsyncRequestNotUsableException ex,
+            HttpServletResponse response
+    ) {
+        // The output stream is no longer usable. Do not attempt another write.
+    }
+
+    @ExceptionHandler(AsyncRequestTimeoutException.class)
+    public ResponseEntity<ErrorResponse> handleAsyncTimeout(
+            AsyncRequestTimeoutException ex,
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) {
+        if (response.isCommitted() || isEventStream(response)) {
+            return null;
+        }
+        return buildError("Yêu cầu đã hết thời gian chờ.", HttpStatus.SERVICE_UNAVAILABLE, request);
+    }
+
+    private boolean isEventStream(HttpServletResponse response) {
+        String contentType = response.getContentType();
+        return contentType != null && contentType.startsWith("text/event-stream");
+    }
 
     // 1. Resource not found
     @ExceptionHandler(ResourceNotFoundException.class)
@@ -73,8 +101,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneralException(
             Exception ex,
-            HttpServletRequest request
+            HttpServletRequest request,
+            HttpServletResponse response
     ) {
+        // Some containers report the original IOException rather than wrapping it
+        // as AsyncRequestNotUsableException. Never serialize JSON into an SSE body.
+        if (response.isCommitted()) return null;
+        if (isEventStream(response)) {
+            response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
+            return null;
+        }
         return buildError(ex.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR, request);
     }
 
