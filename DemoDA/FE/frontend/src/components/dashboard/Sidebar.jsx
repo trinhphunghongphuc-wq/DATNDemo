@@ -11,7 +11,11 @@ import {
   Handshake,
   LogOut,
   Building2,
+  Bell,
+  RotateCcw,
+  Wallet,
 } from "lucide-react";
+import { useNotifications } from "../../contexts/notificationsContext";
 
 const menusByRole = {
   ADMIN: [
@@ -23,11 +27,15 @@ const menusByRole = {
   ],
 
   PRODUCER: [
+    { label: "Hồ sơ hoàn trả", to: "/return-cases", icon: RotateCcw },
+    { label: "Ví và ký anchor", to: "/wallet-anchor", icon: Wallet },
     { label: "Lô hàng của tôi", to: "/producer/batches", icon: Boxes },
     { label: "Đối tác", to: "/producer/partners", icon: Handshake },
   ],
 
 DISTRIBUTOR: [
+    { label: "Hồ sơ hoàn trả", to: "/return-cases", icon: RotateCcw },
+    { label: "Ví và ký anchor", to: "/wallet-anchor", icon: Wallet },
   { label: "Lô hàng được giao", to: "/distributor/batches", icon: Truck },
   { label: "Danh sách xe", to: "/distributor/vehicles", icon: Package },
   { label: "Hồ sơ công ty", to: "/company-profile", icon: Building2 },
@@ -35,6 +43,8 @@ DISTRIBUTOR: [
 ],
 
 RETAILER: [
+    { label: "Hồ sơ hoàn trả", to: "/return-cases", icon: RotateCcw },
+    { label: "Ví và ký anchor", to: "/wallet-anchor", icon: Wallet },
   { label: "Lô hàng nhận", to: "/retailer/batches", icon: Store },
   { label: "Đơn vị bán lẻ", to: "/retailer/retail-units", icon: Package },
   { label: "Hồ sơ công ty", to: "/company-profile", icon: Building2 },
@@ -50,6 +60,7 @@ const roleLabels = {
 
 export default function Sidebar() {
   const navigate = useNavigate();
+  const { unreadCount } = useNotifications();
 
   // AuthResponse của BE trả username và role;
   // LoginPage đã lưu hai giá trị này.
@@ -83,7 +94,9 @@ export default function Sidebar() {
         </p>
 
         <nav aria-label="Menu theo vai trò" className="space-y-1">
-          {menus.map(({ label, to, icon: Icon, end }) => (
+          {menus.map(({ label, to, icon, end }) => {
+            const Icon = icon;
+            return (
             <NavLink
               key={to}
               to={to}
@@ -101,7 +114,8 @@ export default function Sidebar() {
               <Icon size={18} aria-hidden="true" />
               <span>{label}</span>
             </NavLink>
-          ))}
+            );
+          })}
 
           {menus.length === 0 && (
             <p className="px-3 text-sm text-slate-500">
@@ -112,6 +126,19 @@ export default function Sidebar() {
       </div>
 
       <div className="border-t border-slate-800 p-4">
+        <NavLink to="/notifications"
+          className={({ isActive }) => `mb-3 flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors ${
+            isActive ? "bg-blue-600 text-white" : "text-slate-300 hover:bg-slate-800"
+          }`}>
+          <Bell size={19} aria-hidden="true" />
+          <span className="flex-1">Thông báo</span>
+          {unreadCount > 0 && (
+            <span aria-label={`${unreadCount} thông báo chưa đọc`}
+              className="min-w-6 rounded-full bg-red-500 px-1.5 py-0.5 text-center text-xs font-bold text-white">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
+        </NavLink>
         <div className="flex items-center gap-3 rounded-xl bg-slate-800/50 p-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 font-bold text-white">
             {initial}

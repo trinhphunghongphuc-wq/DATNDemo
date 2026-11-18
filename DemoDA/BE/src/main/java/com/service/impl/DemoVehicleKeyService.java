@@ -2,6 +2,8 @@ package com.service.impl;
 
 import com.entity.Vehicle;
 import com.repository.VehicleRepository;
+import com.repository.BatchReturnCaseRepository;
+import com.entity.BatchReturnCase.Status;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,6 +16,7 @@ import java.util.Base64;
 @RequiredArgsConstructor
 public class DemoVehicleKeyService {
     private final VehicleRepository vehicleRepository;
+    private final BatchReturnCaseRepository returnCases;
     private final DemoVehicleRunRegistry demoVehicleRunRegistry;
 
     @Transactional
@@ -34,6 +37,9 @@ public class DemoVehicleKeyService {
         Vehicle vehicle = vehicleRepository.findActiveVehicleForUpdate(vehicleId, distributorId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Vehicle not found or does not belong to this distributor"));
+        if (returnCases.existsByVehicleIdAndStatus(vehicleId, Status.IN_TRANSIT)) {
+            throw new IllegalArgumentException("Xe đang thực hiện chuyến hoàn trả; hãy giữ public key hiện tại.");
+        }
         vehicle.setDevicePublicKey(publicKeyBase64);
         vehicleRepository.save(vehicle);
         // Keep the counter to retain replay protection across demo sessions.

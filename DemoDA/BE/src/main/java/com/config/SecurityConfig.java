@@ -1,5 +1,6 @@
 package com.config;
 
+import jakarta.servlet.DispatcherType;
 import com.security.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -50,6 +51,9 @@ public class SecurityConfig {
                         }
                 ))
                 .authorizeHttpRequests(auth -> auth
+                        // The initial SSE request is authenticated normally. Permit only
+                        // its internal async redispatch when the emitter completes.
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
 

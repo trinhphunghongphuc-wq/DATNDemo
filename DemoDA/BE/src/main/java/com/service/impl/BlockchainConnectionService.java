@@ -1,7 +1,17 @@
 package com.service.impl;
 
 import com.blockchain.contract.TraceabilityRegistry;
+import com.blockchain.contract.WalletRegistryCalls;
 import com.enums.RecordStage;
+import com.entity.Batch;
+import com.exception.BusinessException;
+import com.repository.BatchRepository;
+import org.web3j.abi.EventEncoder;
+import org.web3j.protocol.core.DefaultBlockParameter;
+import org.web3j.protocol.core.methods.request.EthFilter;
+import org.web3j.protocol.core.methods.response.Log;
+import org.web3j.tx.RawTransactionManager;
+import org.web3j.utils.Numeric;
 import com.util.HexUtil;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -21,10 +31,15 @@ public class BlockchainConnectionService {
 
     private final Web3j web3j;
     private final Credentials credentials;
+    private final BatchRepository batches;
 
     @Getter
     @Value("${blockchain.contract.address}")
     private String contractAddress;
+
+    @Getter
+    @Value("${blockchain.wallet-contract.address:}")
+    private String walletContractAddress;
 
     @Value("${blockchain.gas.price}")
     private BigInteger gasPrice;
@@ -32,9 +47,9 @@ public class BlockchainConnectionService {
     @Value("${blockchain.gas.limit}")
     private BigInteger gasLimit;
 
-    private TraceabilityRegistry loadContract() {
+    private TraceabilityRegistry loadContract(String address) {
         return TraceabilityRegistry.load(
-                contractAddress,
+                address,
                 web3j,
                 credentials,
                 new StaticGasProvider(
@@ -74,7 +89,7 @@ public class BlockchainConnectionService {
      * - gas used;
      * - trạng thái giao dịch.
      */
-    public TransactionReceipt anchorStageRoot(
+    public synchronized TransactionReceipt anchorStageRoot(
             Long batchId,
             RecordStage stage,
             String merkleRootHex
@@ -97,7 +112,7 @@ public class BlockchainConnectionService {
         );
 
         TraceabilityRegistry contract =
-                loadContract();
+                loadContract(contractAddress);
 
         return contract.anchorStageRoot(
                 BigInteger.valueOf(batchId),
@@ -125,7 +140,7 @@ public class BlockchainConnectionService {
             );
         }
 
-        byte[] rootBytes = loadContract()
+        byte[] rootBytes = loadContract(readAddress(batchId))
                 .getStageRoot(
                         BigInteger.valueOf(batchId),
                         toBlockchainStage(stage)
@@ -187,7 +202,7 @@ public class BlockchainConnectionService {
                 )
                 .toList();
 
-        return loadContract()
+        return loadContract(readAddress(batchId))
                 .verifyStageRecord(
                         BigInteger.valueOf(batchId),
                         toBlockchainStage(stage),
@@ -196,6 +211,82 @@ public class BlockchainConnectionService {
                         BigInteger.valueOf(stageLeafIndex)
                 )
                 .send();
+    }
+
+    public BigInteger chainId() throws Exception {
+        var response = web3j.ethChainId().send();
+        if (response.hasError()) {
+            throw new IllegalStateException("Không đọc được chain ID từ Ethereum RPC.");
+        }
+        return response.getChainId();
+    }
+
+    private String readAddress(Long batchId) throws Exception {
+        Batch batch = batches.findById(batchId).orElse(null);
+        if (batch == null || batch.getWalletRegistryAddress() == null) return contractAddress;
+        requireWalletChain(batch);
+        return batch.getWalletRegistryAddress();
+    }
+
+    public void requireWalletChain(Batch batch) throws Exception {
+        if (!chainId().equals(batch.getWalletRegistryChainId())) {
+            throw new BusinessException("Ethereum RPC đang trỏ sang mạng khác với mạng của lô.");
+        }
+    }
+
+    private WalletRegistryCalls walletCalls(String address, BigInteger chainId) {
+        return new WalletRegistryCalls(address, web3j,
+                new RawTransactionManager(web3j, credentials, chainId.longValueExact()),
+                new StaticGasProvider(gasPrice, gasLimit));
+    }
+
+    public String stageWallet(String address, BigInteger chain, Long batchId, RecordStage stage) throws Exception {
+        return walletCalls(address, chain).stageWallet(batchId, toBlockchainStage(stage).intValueExact());
+    }
+
+    public synchronized TransactionReceipt bindBatchWallets(String address, BigInteger chain,
+            Long batchId, String producer, String distributor, String retailer) throws Exception {
+        return walletCalls(address, chain).bindBatch(batchId, producer, distributor, retailer);
+    }
+
+    public boolean checkApproval(Batch batch, RecordStage stage, String root, long deadline, byte[] signature)
+            throws Exception {
+        requireWalletChain(batch);
+        return walletCalls(batch.getWalletRegistryAddress(), batch.getWalletRegistryChainId()).verifyStageApproval(
+                batch.getId(), toBlockchainStage(stage).intValueExact(), toBytes32(root, "Root"), deadline, signature);
+    }
+
+    public synchronized TransactionReceipt anchorApprovedStage(Batch batch, RecordStage stage,
+            String root, long deadline, byte[] signature) throws Exception {
+        requireWalletChain(batch);
+        return walletCalls(batch.getWalletRegistryAddress(), batch.getWalletRegistryChainId()).anchorApprovedStage(
+                batch.getId(), toBlockchainStage(stage).intValueExact(), toBytes32(root, "Root"), deadline, signature);
+    }
+
+    // A transaction may have been mined even if the previous HTTP request or database commit failed.
+    public TransactionReceipt findWalletAnchorReceipt(Batch batch, RecordStage stage, String root) throws Exception {
+        requireWalletChain(batch);
+        String address = batch.getWalletRegistryAddress();
+        BigInteger batchId = BigInteger.valueOf(batch.getId());
+        BigInteger stageId = toBlockchainStage(stage);
+        var info = loadContract(address).getStageInfo(batchId, stageId).send();
+        if (!info.component5()) return null;
+        if (!Numeric.toHexString(info.component1()).equalsIgnoreCase(root)) {
+            throw new BusinessException("Root trên chuỗi khác root hiện tại. Hãy đối chiếu trước khi tiếp tục.");
+        }
+        var block = DefaultBlockParameter.valueOf(info.component3());
+        var filter = new EthFilter(block, block, address);
+        filter.addSingleTopic(EventEncoder.encode(TraceabilityRegistry.STAGEROOTANCHORED_EVENT));
+        filter.addSingleTopic(Numeric.toHexStringWithPrefixZeroPadded(batchId, 64));
+        filter.addSingleTopic(Numeric.toHexStringWithPrefixZeroPadded(stageId, 64));
+        var logs = web3j.ethGetLogs(filter).send();
+        if (logs.hasError() || logs.getLogs().size() != 1) {
+            throw new BusinessException("Đã có root trên chuỗi nhưng chưa đọc được giao dịch anchor.");
+        }
+        var entry = (Log) logs.getLogs().get(0).get();
+        return web3j.ethGetTransactionReceipt(entry.getTransactionHash()).send()
+                .getTransactionReceipt().orElseThrow(
+                        () -> new BusinessException("Chưa đọc được biên nhận anchor từ Ethereum."));
     }
 
     /*

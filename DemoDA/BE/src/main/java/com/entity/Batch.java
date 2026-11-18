@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigInteger;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -100,4 +101,10 @@ public class Batch {
 
     @Column(name = "retailer_recording_closed", nullable = false)
     private boolean retailerRecordingClosed;
+
+    @Column(name = "wallet_registry_address", length = 42)
+    private String walletRegistryAddress;
+
+    @Column(name = "wallet_registry_chain_id", precision = 78, scale = 0)
+    private BigInteger walletRegistryChainId;
 }

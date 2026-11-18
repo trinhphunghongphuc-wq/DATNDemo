@@ -14,6 +14,7 @@ import com.entity.Record;
 import com.entity.User;
 import com.enums.AnchorStatus;
 import com.enums.Role;
+import com.exception.BusinessException;
 import com.repository.BatchRepository;
 import com.repository.RecordRepository;
 import com.repository.UserRepository;
@@ -22,7 +23,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import com.entity.StageAnchorTransaction;
 import com.repository.StageAnchorTransactionRepository;
-import com.dto.blockchain.StageAnchorResponse;
 import java.time.LocalDateTime;
 
 
@@ -42,7 +42,7 @@ public class AdminServiceImpl implements AdminService {
     private final RecordRepository recordRepository;
     private final UserRepository userRepository;
     private final BatchLockService batchLockService;
-    private final BlockchainConnectionService blockchainConnectionService;
+    private final WalletAnchorService walletAnchors;
     private final StageAnchorTransactionRepository
             stageAnchorTransactionRepository;
 
@@ -177,10 +177,7 @@ public class AdminServiceImpl implements AdminService {
             throw new IllegalArgumentException("Record stage is required");
         }
 
-        Batch batch = batchRepository.findById(batchId)
-                .orElseThrow(() -> new RuntimeException(
-                        "Batch not found with id: " + batchId
-                ));
+        Batch batch = batchLockService.lock(batchId);
 
         boolean alreadyAnchored =
                 stageAnchorTransactionRepository
@@ -209,12 +206,8 @@ public class AdminServiceImpl implements AdminService {
         }
 
         try {
-            TransactionReceipt receipt =
-                    blockchainConnectionService.anchorStageRoot(
-                            batch.getId(),
-                            stage,
-                            stageRoot
-                    );
+            var result = walletAnchors.submit(batch, stage, stageRoot);
+            TransactionReceipt receipt = result.receipt();
 
             if (!receipt.isStatusOK()) {
                 throw new IllegalStateException(
@@ -225,6 +218,7 @@ public class AdminServiceImpl implements AdminService {
             StageAnchorTransaction anchorTransaction =
                     StageAnchorTransaction.builder()
                             .batch(batch)
+                            .approvingWallet(result.approvingWallet())
                             .recordStage(stage)
                             .transactionHash(receipt.getTransactionHash())
                             .blockNumber(receipt.getBlockNumber())
@@ -242,16 +236,11 @@ public class AdminServiceImpl implements AdminService {
 
             return mapBatchToAdminResponse(batch);
 
+        } catch (BusinessException exception) {
+            throw exception;
         } catch (Exception exception) {
-            batch.setAnchorStatus(AnchorStatus.ANCHOR_FAILED);
-            batchRepository.save(batch);
-
             throw new RuntimeException(
-                    "Failed to anchor " + stage
-                            + " Merkle root: "
-                            + exception.getMessage(),
-                    exception
-            );
+                    "Failed to anchor " + stage + " Merkle root: " + exception.getMessage(), exception);
         }
     }
 
@@ -311,6 +300,7 @@ public class AdminServiceImpl implements AdminService {
                                 .blockNumber(anchor.getBlockNumber())
                                 .gasUsed(anchor.getGasUsed())
                                 .anchoredAt(anchor.getAnchoredAt())
+                                .approvingWallet(anchor.getApprovingWallet())
                                 .build()
                 )
                 .toList();

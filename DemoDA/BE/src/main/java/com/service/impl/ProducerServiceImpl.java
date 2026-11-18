@@ -106,10 +106,16 @@ public class ProducerServiceImpl implements ProducerService {
             UpdateExpiryDateRequest request,
             String username
     ) {
+        batchLockService.lock(batchId);
+
         Batch batch = getProducerBatch(batchId, username);
+
         validateBatchCanBeModified(batch);
+
         batch.setExpiryDate(request.getExpiryDate());
+
         Batch savedBatch = batchRepository.save(batch);
+
         return mapToProducerBatchResponse(savedBatch);
     }
 

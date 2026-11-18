@@ -24,4 +24,5 @@ public class StageAnchorResponse {
     private BigInteger gasUsed;
 
     private LocalDateTime anchoredAt;
+    private String approvingWallet;
 }

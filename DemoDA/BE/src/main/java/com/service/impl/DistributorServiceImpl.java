@@ -18,6 +18,8 @@ import com.enums.Role;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.repository.BatchRepository;
 import com.repository.VehicleRepository;
+import com.repository.BatchReturnCaseRepository;
+import com.entity.BatchReturnCase.Status;
 import com.service.DeviceSignatureService;
 import com.service.DistributorService;
 import com.service.RecordService;
@@ -46,7 +48,9 @@ public class DistributorServiceImpl implements DistributorService {
     private final DeviceSignatureService deviceSignatureService;
     private ProductCategoryResponse productCategory;
     private final DemoVehicleRunRegistry demoVehicleRunRegistry;
+    private final BatchReturnCaseRepository returnCases;
     private final BatchLockService batchLockService;
+    private final NotificationService notificationService;
 
 
     @Override
@@ -60,14 +64,18 @@ public class DistributorServiceImpl implements DistributorService {
     }
 
     @Override
+    @Transactional
     public AdminBatchListResponse receiveBatch(
             Long batchId,
             Long distributorId
     ) {
+        batchLockService.lock(batchId);
+
         Batch batch = getBatchForDistributor(
                 batchId,
                 distributorId
         );
+
 
         if (batch.getStatus() == BatchStatus.RECEIVED_BY_DISTRIBUTOR) {
             throw new IllegalStateException(
@@ -99,6 +107,9 @@ public class DistributorServiceImpl implements DistributorService {
             TransportSensorRecordRequest request,
             Long distributorId
     ) {
+
+        batchLockService.lock(batchId);
+
         Batch batch = getBatchForDistributor(
                 batchId,
                 distributorId
@@ -134,6 +145,10 @@ public class DistributorServiceImpl implements DistributorService {
                                 "Vehicle not found or does not belong to this distributor"
                         )
                 );
+
+        if (returnCases.existsByVehicleIdAndStatus(vehicle.getId(), Status.IN_TRANSIT)) {
+            throw new com.exception.BusinessException("Xe đang thực hiện chuyến hoàn trả.");
+        }
 
         if (vehicle.getDevicePublicKey() == null
                 || vehicle.getDevicePublicKey().isBlank()) {
@@ -332,10 +347,13 @@ public class DistributorServiceImpl implements DistributorService {
     }
 
     @Override
+    @Transactional
     public AdminBatchListResponse DeliveryToDetailer(
             Long batchId,
             Long distributorId
     ) {
+        batchLockService.lock(batchId);
+
         Batch batch = getBatchForDistributor(
                 batchId,
                 distributorId
@@ -360,6 +378,8 @@ public class DistributorServiceImpl implements DistributorService {
 
         Batch savedBatch =
                 batchRepository.save(batch);
+
+        notificationService.batchDelivered(savedBatch);
 
         return toBatchListResponse(savedBatch);
     }
@@ -399,7 +419,13 @@ public class DistributorServiceImpl implements DistributorService {
             RecordRequest request,
             Long distributorId
     ) {
-        Batch batch = getBatchForDistributor(batchId, distributorId);
+        batchLockService.lock(batchId);
+
+        Batch batch = getBatchForDistributor(
+                batchId,
+                distributorId
+        );
+
         if (batch.getStatus() != BatchStatus.RECEIVED_BY_DISTRIBUTOR
                 && batch.getStatus() != BatchStatus.IN_DISTRIBUTION) {
             throw new IllegalStateException("Distributor must receive batch before adding warehouse record");
@@ -428,7 +454,17 @@ public class DistributorServiceImpl implements DistributorService {
             ReturnReceiptRequest request,
             Long distributorId
     ) {
-        Batch batch = getBatchForDistributor(batchId, distributorId);
+        batchLockService.lock(batchId);
+
+        Batch batch = getBatchForDistributor(
+                batchId,
+                distributorId
+        );
+
+
+        if (returnCases.existsById(batchId)) {
+            throw new com.exception.BusinessException("Xử lý lô này tại mục Hồ sơ hoàn trả.");
+        }
 
         if (batch.getStatus() != BatchStatus.DELIVERY_REJECTED) {
             throw new IllegalStateException("Batch has not been rejected by retailer");

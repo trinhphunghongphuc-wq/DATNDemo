@@ -44,6 +44,9 @@ public class User {
     @Column(name = "company_address", length = 500)
     private String companyAddress;
 
+    @Column(name = "wallet_address", length = 42)
+    private String walletAddress;
+
     public User() {
     }
 

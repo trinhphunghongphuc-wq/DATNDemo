@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import axiosClient from "../../api/axiosClient";
+import useReadBatchNotifications from "../../hooks/useReadBatchNotifications";
 
 function errorMessage(error) {
   return error.response?.data?.message ?? error.message ?? "Đã xảy ra lỗi.";
@@ -9,6 +10,7 @@ function errorMessage(error) {
 export default function RetailerRecordsPage() {
   const { batchId } = useParams();
   const [batch, setBatch] = useState(null);
+  useReadBatchNotifications(batchId, batch?.id);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -372,6 +374,12 @@ export default function RetailerRecordsPage() {
 
       {error && <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-300">{error}</p>}
       {notice && <p className="rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-green-300">{notice}</p>}
+
+      {["DELIVERY_REJECTED", "RETURNED_TO_DISTRIBUTOR"].includes(batch?.status) && (
+        <Link to="/return-cases" className="inline-block rounded-lg border border-slate-700 px-4 py-2 text-sm text-blue-400">
+          Xem danh sách hồ sơ hoàn trả
+        </Link>
+      )}
 
       {batch?.status === "DELIVERED_TO_RETAILER" && (
         <div className="rounded-xl border border-slate-800 bg-[#111827] p-4">

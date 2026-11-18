@@ -30,6 +30,8 @@ export default function AdminBatchesPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [anchors, setAnchors] = useState([]);
+  const [walletStatus, setWalletStatus] = useState(null);
+  const [bindingWallets, setBindingWallets] = useState(false);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [anchoringStage, setAnchoringStage] = useState(null);
@@ -78,16 +80,19 @@ export default function AdminBatchesPage() {
     setSelectedId(batchId);
     setDetail(null);
     setAnchors([]);
+    setWalletStatus(null);
     setDetailLoading(true);
     setActionError("");
     setNotice("");
 
     try {
-      const [detailResponse, anchorsResponse] = await Promise.all([
+      const [detailResponse, anchorsResponse, walletResponse] = await Promise.all([
         axiosClient.get(`/admin/batches/${batchId}`),
         axiosClient.get(`/admin/batches/${batchId}/anchors`),
+        axiosClient.get(`/admin/batches/${batchId}/wallet-anchors`),
       ]);
 
+      setWalletStatus(walletResponse.data);
       setDetail(detailResponse.data);
       setAnchors(anchorsResponse.data ?? []);
     } catch (err) {
@@ -101,8 +106,25 @@ export default function AdminBatchesPage() {
     loadBatches();
   }, []);
 
+  async function bindWallets() {
+    if (bindingWallets || anchoringStage || !selectedId) return;
+    if (!window.confirm("Gán cố định ba ví đã lưu của các bên cho lô này?")) return;
+    setBindingWallets(true);
+    setActionError("");
+    setNotice("");
+    try {
+      const { data } = await axiosClient.post(`/admin/batches/${selectedId}/wallet-anchors`);
+      setWalletStatus(data);
+      setNotice("Đã gán ví. Các bên có thể ký tại mục Ví và ký anchor.");
+    } catch (err) {
+      setActionError(errorMessage(err));
+    } finally {
+      setBindingWallets(false);
+    }
+  }
+
   async function handleAnchor(stage) {
-    if (!selectedId || anchoringStage) return;
+    if (!selectedId || anchoringStage || bindingWallets) return;
 
     const accepted = window.confirm(
       `Ghi Merkle root của stage ${stage} cho batch #${selectedId} lên blockchain?\n\nGiao dịch này có thể tốn gas và không thể hoàn tác.`
@@ -209,7 +231,8 @@ export default function AdminBatchesPage() {
                 <button
                   key={batch.id}
                   type="button"
-                  onClick={() => loadBatchDetail(batch.id)}
+                  disabled={bindingWallets || !!anchoringStage || detailLoading}
+                    onClick={() => loadBatchDetail(batch.id)}
                   className={`mb-1 w-full rounded-xl border p-4 text-left transition-colors ${selectedId === batch.id
                     ? "border-blue-500/60 bg-blue-500/10"
                     : "border-transparent hover:bg-slate-800/70"
@@ -271,12 +294,28 @@ export default function AdminBatchesPage() {
                   {actionError}
                 </p>
               )}
+              {walletStatus?.mode === "UNBOUND" && (
+                <button type="button" onClick={bindWallets} disabled={bindingWallets || !!anchoringStage}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold disabled:opacity-50">
+                  {bindingWallets ? "Đang gán ví…" : "Gán ví ba bên lên Ethereum"}
+                </button>
+              )}
+              {walletStatus?.mode === "WALLET" && (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="break-all text-sm text-slate-400">Wallet registry {walletStatus.registryAddress}</p>
+                  <button type="button" disabled={!!anchoringStage} onClick={() => loadBatchDetail(selectedId)}
+                    className="rounded-lg border border-slate-700 px-3 py-2 text-sm disabled:opacity-50">
+                    Cập nhật chữ ký
+                  </button>
+                </div>
+              )}
 <div className="grid gap-4 lg:grid-cols-3">
   {STAGES.map((stage) => {
     const anchor = anchors.find(
       (item) => item.recordStage === stage
     );
-    const busy = anchoringStage !== null;
+    const busy = anchoringStage !== null || bindingWallets;
+    const walletApproval = walletStatus?.approvals?.find((entry) => entry.stage === stage);
     const waitingForRetailer =
       stage === "RETAILER" &&
       detail != null &&
@@ -312,6 +351,7 @@ export default function AdminBatchesPage() {
             </p>
             <p>Block: {anchor.blockNumber ?? "—"}</p>
             <p>Gas: {anchor.gasUsed ?? "—"}</p>
+            {anchor.approvingWallet && <p className="break-all">Ví đã ký {anchor.approvingWallet}</p>}
             <p>{formatDate(anchor.anchoredAt)}</p>
           </div>
         ) : (
@@ -319,7 +359,7 @@ export default function AdminBatchesPage() {
             <button
               type="button"
               onClick={() => handleAnchor(stage)}
-              disabled={busy || !detail || waitingForRetailer}
+              disabled={busy || !detail || !walletStatus || walletStatus.mode === "UNBOUND" || waitingForRetailer}
               className="mt-4 w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {anchoringStage === stage
@@ -327,6 +367,11 @@ export default function AdminBatchesPage() {
                 : `Anchor ${stage}`}
             </button>
 
+            {walletStatus?.mode === "WALLET" && (
+              <p className="mt-2 break-all text-xs text-slate-300">
+                {walletApproval?.ready ? `Đã ký bởi ${walletApproval.signerAddress}` : "Chưa có chữ ký cho root hiện tại."}
+              </p>
+            )}
             {waitingForRetailer && (
               <p className="mt-2 text-xs text-amber-400">
                 Chờ Retailer hoàn tất ghi nhận trước khi anchor.

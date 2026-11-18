@@ -14,9 +14,11 @@ import {
   getDistributorBatchDetail,
   getTransportJourney,
   planTransportRoute,
+  receiveDistributorBatch,
 } from "../../api/distributorApi";
 import axiosClient from "../../api/axiosClient";
 import Pagination from "../../components/common/Pagination";
+import useReadBatchNotifications from "../../hooks/useReadBatchNotifications";
 
 const mapTilerKey = import.meta.env.VITE_MAPTILER_KEY;
 
@@ -219,6 +221,7 @@ function JourneyMap({ routePositions, points, origin, destination, canSelect }) 
 export default function DistributorJourneyPage() {
   const { batchId } = useParams();
   const [batch, setBatch] = useState(null);
+  useReadBatchNotifications(batchId, batch?.id);
   const [journey, setJourney] = useState(null);
   const [origin, setOrigin] = useState(null);
   const [destination, setDestination] = useState(null);
@@ -226,6 +229,7 @@ export default function DistributorJourneyPage() {
   const [saving, setSaving] = useState(false);
   const [savingWarehouse, setSavingWarehouse] = useState(false);
   const [savingDelivery, setSavingDelivery] = useState(false);
+  const [receivingBatch, setReceivingBatch] = useState(false);
   const [vehicles, setVehicles] = useState([]);
   const [vehicleId, setVehicleId] = useState("");
   const [demoCount, setDemoCount] = useState(8);
@@ -253,6 +257,22 @@ export default function DistributorJourneyPage() {
     warehouseName: "",
     warehouseAddress: "",
   });
+
+  const [returnCase, setReturnCase] = useState(null);
+  const returnStatus = batch?.status;
+
+  useEffect(() => {
+    if (!["DELIVERY_REJECTED", "RETURNED_TO_DISTRIBUTOR"].includes(returnStatus)) return;
+    const controller = new AbortController();
+    axiosClient.get(`/return-cases/${batchId}`, { signal: controller.signal })
+      .then(() => setReturnCase({ batchId, exists: true }))
+      .catch((err) => {
+        if (!controller.signal.aborted && err.response?.status === 404) {
+          setReturnCase({ batchId, exists: false });
+        }
+      });
+    return () => controller.abort();
+  }, [batchId, returnStatus]);
 
   const [savingReturn, setSavingReturn] = useState(false);
   const [notice, setNotice] = useState("");
@@ -712,6 +732,23 @@ export default function DistributorJourneyPage() {
     }
   }
 
+  async function handleReceiveBatch() {
+    if (receivingBatch || batch?.status !== "ASSIGNED_TO_DISTRIBUTOR") return;
+    setReceivingBatch(true);
+    setError("");
+    setNotice("");
+    try {
+      const { data } = await receiveDistributorBatch(batchId);
+      // Receive returns the list DTO; retain detail fields such as productCategory.
+      setBatch((current) => ({ ...current, ...data }));
+      setNotice("Đã xác nhận nhận hàng. Bạn có thể lập tuyến và bắt đầu vận chuyển.");
+    } catch (err) {
+      setError(err.response?.data?.message ?? "Không thể xác nhận nhận hàng. Hãy thử lại.");
+    } finally {
+      setReceivingBatch(false);
+    }
+  }
+
   async function handleRefresh() {
     try {
       setError("");
@@ -794,9 +831,17 @@ export default function DistributorJourneyPage() {
             Batch #{batchId} · {batch?.status ?? "Không rõ trạng thái"}
           </p>
         </div>
-        <button type="button" onClick={handleRefresh} className="rounded-lg border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800">
-          Cập nhật GPS
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {batch?.status === "ASSIGNED_TO_DISTRIBUTOR" && (
+            <button type="button" onClick={handleReceiveBatch} disabled={receivingBatch}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold hover:bg-blue-500 disabled:opacity-50">
+              {receivingBatch ? "Đang xác nhận..." : "Xác nhận nhận hàng"}
+            </button>
+          )}
+          <button type="button" onClick={handleRefresh} className="rounded-lg border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800">
+            Cập nhật GPS
+          </button>
+        </div>
       </div>
       {error && (
         <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-300">{error}</p>
@@ -949,7 +994,12 @@ export default function DistributorJourneyPage() {
         </form>
       )}
 
-      {batch?.status === "DELIVERY_REJECTED" && (
+      {returnCase?.batchId === batchId && returnCase.exists && (
+        <Link to={`/return-cases/${batchId}`} className="block rounded-xl border border-amber-500/40 p-4 text-amber-300 hover:bg-amber-500/10">
+          Mở hồ sơ hoàn trả
+        </Link>
+      )}
+      {batch?.status === "DELIVERY_REJECTED" && returnCase?.batchId === batchId && !returnCase.exists && (
         <form onSubmit={handleReceiveReturn}
           className="space-y-3 rounded-xl border border-amber-500/30 bg-[#111827] p-4">
           <h2 className="font-semibold">Nhận hàng Retailer trả về</h2>

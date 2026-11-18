@@ -1,5 +1,10 @@
 package com.controller;
 
+import com.dto.batch.BatchPageResponse;
+import com.security.CustomUserDetails;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.service.impl.BatchSearchService;
+
 
 import com.dto.batch.UpdateExpiryDateRequest;
 import com.dto.record.RecordRequest;
@@ -27,6 +32,7 @@ public class ProducerController {
 
     private final ProducerService producerService;
     private final ProducerPartnerService partnerService;
+    private final BatchSearchService batchSearchService;
 
     @PostMapping("/batches")
     public ProducerBatchResponse createBatch(
@@ -37,8 +43,13 @@ public class ProducerController {
     }
 
     @GetMapping("/batches")
-    public List<ProducerBatchResponse> getMyBatches(Authentication authentication) {
-        return producerService.getMyBatches(authentication.getName());
+    public BatchPageResponse getMyBatches(
+            @AuthenticationPrincipal CustomUserDetails user,
+            @RequestParam(defaultValue = "") String keyword,
+            @RequestParam(defaultValue = "") String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return batchSearchService.search(user, keyword, status, page, size);
     }
 
     @GetMapping("/batches/{batchId}")

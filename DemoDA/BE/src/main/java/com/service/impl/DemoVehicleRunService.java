@@ -10,6 +10,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.repository.BatchRepository;
 import com.repository.VehicleRepository;
+import com.repository.BatchReturnCaseRepository;
+import com.entity.BatchReturnCase.Status;
 import com.service.DistributorService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -41,6 +43,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class DemoVehicleRunService {
     private final BatchRepository batchRepository;
     private final VehicleRepository vehicleRepository;
+    private final BatchReturnCaseRepository returnCases;
     private final DistributorService distributorService;
     private final DemoVehicleRunRegistry registry;
     private final ObjectMapper objectMapper;
@@ -143,6 +146,10 @@ public class DemoVehicleRunService {
                     .orElseThrow(() -> new IllegalArgumentException(
                             "Xe không tồn tại hoặc không thuộc Distributor"
                     ));
+
+            if (returnCases.existsByVehicleIdAndStatus(vehicle.getId(), Status.IN_TRANSIT)) {
+                throw new IllegalArgumentException("Xe đang thực hiện chuyến hoàn trả.");
+            }
 
             KeyPair keyPair = KeyPairGenerator
                     .getInstance("Ed25519")

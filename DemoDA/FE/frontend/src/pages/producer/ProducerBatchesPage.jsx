@@ -5,12 +5,14 @@ import {
   createProducerBatch,
   getBatchRecords,
   getProducerBatch,
-  getProducerBatches,
   getProductCategories,
   updateProducerExpiry,
   verifyProducerBatch,
 } from "../../api/producerApi";
 import { getMyPartners } from "../../api/partnerApi";
+import Pagination from "../../components/common/Pagination";
+import BatchSearchToolbar from "../../components/common/BatchSearchToolbar";
+import useBatchSearch from "../../hooks/useBatchSearch";
 
 
 
@@ -205,7 +207,9 @@ export default function ProducerBatchesPage() {
   const [retailers, setRetailers] = useState([]);
   const [partnersLoading, setPartnersLoading] = useState(true);
 
-  const [batches, setBatches] = useState([]);
+  const list = useBatchSearch("/producer/batches");
+  const batches = list.items;
+  const loading = list.loading;
   const [categories, setCategories] = useState([]);
   const [form, setForm] = useState(emptyCreateForm);
   const [showCreate, setShowCreate] = useState(false);
@@ -216,30 +220,21 @@ export default function ProducerBatchesPage() {
   const [newRecord, setNewRecord] = useState(emptyNewRecord);
   const [expiryDraft, setExpiryDraft] = useState("");
 
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
   async function loadList() {
-    const response = await getProducerBatches();
-    setBatches(response.data ?? []);
+    list.reload();
   }
 
   useEffect(() => {
     async function load() {
       try {
-        const [batchResponse, categoryResponse] = await Promise.all([
-          getProducerBatches(),
-          getProductCategories(),
-        ]);
-
-        setBatches(batchResponse.data ?? []);
+        const categoryResponse = await getProductCategories();
         setCategories(categoryResponse.data ?? []);
       } catch (err) {
         setError(messageOf(err));
-      } finally {
-        setLoading(false);
       }
     }
 
@@ -403,7 +398,7 @@ async function handleCreate(event) {
     setForm(emptyCreateForm());
     setShowCreate(false);
 
-    await loadList();
+    list.reload({ firstPage: true });
     await openBatch(response.data.id);
 
     setNotice(`Đã tạo batch #${response.data.id}.`);
@@ -727,11 +722,14 @@ async function handleCreate(event) {
         <section className="rounded-2xl border border-slate-800 bg-[#111827] p-4">
           <h2 className="mb-3 font-semibold">Danh sách batch</h2>
 
+          <BatchSearchToolbar list={list} role="PRODUCER" />
+          {list.error && <p role="alert" className="mb-3 text-sm text-red-300">{list.error}</p>}
+
           {loading ? (
             <p className="text-sm text-slate-400">Đang tải...</p>
           ) : batches.length === 0 ? (
             <p className="text-sm text-slate-400">
-              Bạn chưa tạo batch nào.
+              Không có lô hàng phù hợp.
             </p>
           ) : (
             <div className="max-h-[650px] space-y-2 overflow-y-auto">
@@ -746,6 +744,7 @@ async function handleCreate(event) {
                     }`}
                 >
                   <strong className="block">{batch.name}</strong>
+                  <span className="mt-1 block text-xs text-blue-400">{batch.batchCode}</span>
                   <span className="mt-1 block text-xs text-slate-400">
                     #{batch.id} · {batch.status} ·{" "}
                     {batch.recordCount} records
@@ -754,6 +753,7 @@ async function handleCreate(event) {
               ))}
             </div>
           )}
+          <Pagination page={list.page} totalPages={list.totalPages} onPageChange={list.setPage} />
         </section>
 
         <section className="rounded-2xl border border-slate-800 bg-[#111827] p-5">
