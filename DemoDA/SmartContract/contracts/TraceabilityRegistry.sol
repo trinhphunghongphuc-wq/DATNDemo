@@ -4,8 +4,7 @@ pragma solidity ^0.8.20;
 contract TraceabilityRegistry {
 
     /*
-     * CẢI TIẾN SO VỚI BASELINE YAO TRONG ĐỒ ÁN:
-     * Mỗi giai đoạn của chuỗi cung ứng có một Merkle root độc lập.
+     * Kế thừa cách tổ chức Merkle root theo từng khâu của Yao và Zhang.
      *
      * 0 = PRODUCER
      * 1 = DISTRIBUTOR
@@ -115,7 +114,15 @@ contract TraceabilityRegistry {
         uint256 batchId,
         Stage stage,
         bytes32 merkleRoot
-    ) external onlyAuthorizedWriter {
+    ) external virtual onlyAuthorizedWriter {
+        _anchorStageRoot(batchId, stage, merkleRoot);
+    }
+
+    function _anchorStageRoot(
+        uint256 batchId,
+        Stage stage,
+        bytes32 merkleRoot
+    ) internal {
         require(
             batchId > 0,
             "Invalid batchId"

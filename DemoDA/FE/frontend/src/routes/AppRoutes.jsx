@@ -10,7 +10,9 @@ import RegisterPage from "../pages/auth/RegisterPage";
 import TraceBatchPage from "../pages/trace/TraceBatchPage";
 import TraceRetailUnitPage from "../pages/trace/TraceRetailUnitPage";
 
+import WalletAnchorPage from "../pages/wallet/WalletAnchorPage";
 import DashboardLayout from "../layouts/DashboardLayout";
+import { ReturnCaseDetail, ReturnCaseList } from "../pages/returns/ReturnCasesPage";
 import NotificationsPage from "../pages/notifications/NotificationsPage";
 import BatchQrPage from "../pages/batches/BatchQrPage";
 
@@ -142,6 +144,12 @@ export default function AppRoutes() {
 
         <Route element={<RoleRoute allowedRoles={["ADMIN", "PRODUCER", "DISTRIBUTOR", "RETAILER"]} />}>
           <Route path="/notifications" element={<NotificationsPage />} />
+        </Route>
+
+        <Route element={<RoleRoute allowedRoles={["PRODUCER", "DISTRIBUTOR", "RETAILER"]} />}>
+          <Route path="/wallet-anchor" element={<WalletAnchorPage />} />
+          <Route path="/return-cases" element={<ReturnCaseList />} />
+          <Route path="/return-cases/:batchId" element={<ReturnCaseDetail />} />
         </Route>
 
         {/* Admin */}

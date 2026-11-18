@@ -85,6 +85,9 @@ public class StageAnchorTransaction {
     )
     private LocalDateTime anchoredAt;
 
+    @Column(name = "approving_wallet", length = 42)
+    private String approvingWallet;
+
     @PrePersist
     public void prePersist() {
         if (anchoredAt == null) {

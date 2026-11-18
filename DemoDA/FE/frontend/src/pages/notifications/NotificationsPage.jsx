@@ -36,7 +36,7 @@ export default function NotificationsPage() {
     setBusyId(item.id);
     try {
       const read = await markRead(item.id);
-      navigate(read.targetUrl);
+      navigate(read.targetUrl, { state: { fromNotification: true } });
     } catch (error) {
       setError(error.response?.data?.message || "Chưa đánh dấu đã đọc được. Hãy thử lại.");
     } finally {

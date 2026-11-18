@@ -10,6 +10,9 @@ public record NotificationResponse(Long id, Long batchId, String eventType,
         String path = n.getRecipientRole() == Role.DISTRIBUTOR
                 ? "/distributor/batches/" + n.getBatchId()
                 : "/retailer/batches/" + n.getBatchId() + "/records";
+        if (n.getEventType().startsWith("RETURN_")) {
+            path = "/return-cases/" + n.getBatchId();
+        }
         return new NotificationResponse(n.getId(), n.getBatchId(), n.getEventType(),
                 n.getTitle(), n.getMessage(), n.getCreatedAt(), n.getReadAt(), path);
     }

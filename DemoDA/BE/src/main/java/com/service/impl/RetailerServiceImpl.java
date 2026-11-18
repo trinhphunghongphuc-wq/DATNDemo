@@ -47,6 +47,7 @@ public class RetailerServiceImpl implements RetailerService {
     private final RecordService recordService;
     private final VerifyService verifyService;
     private final ObjectMapper objectMapper;
+    private final BatchReturnService batchReturns;
     private final BatchLockService batchLockService;
     private final RetailUnitRepository retailUnitRepository;
     private final RecordRepository recordRepository;
@@ -273,10 +274,14 @@ public class RetailerServiceImpl implements RetailerService {
         recordRequest.setRecordType(RecordType.DELIVERY_REJECTION);
         recordRequest.setRawJson(objectMapper.valueToTree(payload).toString());
 
-        // Ghi record khi batch còn DELIVERED_TO_RETAILER.
-        recordService.createRecordsForBatch(
+        // Keep the original rejection record and open the separate return case atomically.
+        String recordKey = recordService.createRecordsForBatch(
                 batch, List.of(recordRequest), Role.RETAILER
-        );
+        ).get(0).getRecordKey();
+        if (batch.getCreatedBy() != null && batch.getDistributorId() != null) {
+            batchReturns.open(batch, retailerId, returnedWeight, request.getReason(),
+                    request.getEvidenceCid(), recordKey);
+        }
 
         batch.setStatus(BatchStatus.DELIVERY_REJECTED);
         return toBatchListResponse(batchRepository.save(batch));

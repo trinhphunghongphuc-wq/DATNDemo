@@ -15,6 +15,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import com.dto.blockchain.StageAnchorResponse;
+import com.dto.blockchain.WalletAnchorDto.BatchStatus;
+import com.service.impl.WalletAnchorService;
 import java.util.List;
 
 @RestController
@@ -23,6 +25,7 @@ import java.util.List;
 public class AdminController {
 
     private final AdminService adminService;
+    private final WalletAnchorService walletAnchors;
 
     @GetMapping("/batches")
     public List<AdminBatchListResponse> getAllBatches() {
@@ -119,5 +122,14 @@ public class AdminController {
             @PathVariable Long id
     ) {
         return adminService.getStageAnchors(id);
+    }
+    @GetMapping("/batches/{id}/wallet-anchors")
+    public BatchStatus walletAnchorStatus(@PathVariable Long id) {
+        return walletAnchors.status(id);
+    }
+
+    @PostMapping("/batches/{id}/wallet-anchors")
+    public BatchStatus bindWallets(@PathVariable Long id) throws Exception {
+        return walletAnchors.bind(id);
     }
 }

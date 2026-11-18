@@ -12,6 +12,8 @@ import {
   LogOut,
   Building2,
   Bell,
+  RotateCcw,
+  Wallet,
 } from "lucide-react";
 import { useNotifications } from "../../contexts/notificationsContext";
 
@@ -25,11 +27,15 @@ const menusByRole = {
   ],
 
   PRODUCER: [
+    { label: "Hồ sơ hoàn trả", to: "/return-cases", icon: RotateCcw },
+    { label: "Ví và ký anchor", to: "/wallet-anchor", icon: Wallet },
     { label: "Lô hàng của tôi", to: "/producer/batches", icon: Boxes },
     { label: "Đối tác", to: "/producer/partners", icon: Handshake },
   ],
 
 DISTRIBUTOR: [
+    { label: "Hồ sơ hoàn trả", to: "/return-cases", icon: RotateCcw },
+    { label: "Ví và ký anchor", to: "/wallet-anchor", icon: Wallet },
   { label: "Lô hàng được giao", to: "/distributor/batches", icon: Truck },
   { label: "Danh sách xe", to: "/distributor/vehicles", icon: Package },
   { label: "Hồ sơ công ty", to: "/company-profile", icon: Building2 },
@@ -37,6 +43,8 @@ DISTRIBUTOR: [
 ],
 
 RETAILER: [
+    { label: "Hồ sơ hoàn trả", to: "/return-cases", icon: RotateCcw },
+    { label: "Ví và ký anchor", to: "/wallet-anchor", icon: Wallet },
   { label: "Lô hàng nhận", to: "/retailer/batches", icon: Store },
   { label: "Đơn vị bán lẻ", to: "/retailer/retail-units", icon: Package },
   { label: "Hồ sơ công ty", to: "/company-profile", icon: Building2 },

@@ -6,6 +6,7 @@ import com.security.JwtService;
 import com.service.impl.NotificationService;
 import com.service.impl.NotificationStreamService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -36,6 +37,12 @@ public class NotificationController {
     @PatchMapping("/{id}/read")
     public NotificationResponse read(@AuthenticationPrincipal CustomUserDetails user, @PathVariable Long id) {
         return notifications.read(user, id);
+    }
+
+    @PatchMapping("/batches/{batchId}/read")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void readBatch(@AuthenticationPrincipal CustomUserDetails user, @PathVariable Long batchId) {
+        notifications.readBatch(user, batchId);
     }
 
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

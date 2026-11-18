@@ -36,6 +36,12 @@ public class NotificationService {
                 "Có lô hàng chờ nhận", "Lô " + batch.getBatchCode() + " đã được giao đến bạn.");
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void batchReturnUpdated(Long userId, Role role, Batch batch, String action, String title, String message) {
+        create(userId, role, batch, "RETURN_" + action,
+                title, "Lô " + batch.getBatchCode() + ". " + message);
+    }
+
     private void create(Long userId, Role role, Batch batch, String type, String title, String message) {
         if (userId == null) return;
         notifications.save(new Notification(userId, role, batch.getId(), type, title, message));
@@ -68,5 +74,12 @@ public class NotificationService {
         }
         return NotificationResponse.from(notifications
                 .findByIdAndRecipientIdAndRecipientRole(id, user.getId(), user.getRole()).orElseThrow());
+    }
+
+    @Transactional
+    public void readBatch(CustomUserDetails user, Long batchId) {
+        if (notifications.markBatchRead(batchId, user.getId(), user.getRole(), Instant.now()) > 0) {
+            events.publishEvent(new NotificationChanged(user.getId()));
+        }
     }
 }

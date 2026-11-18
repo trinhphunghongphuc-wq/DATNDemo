@@ -77,8 +77,13 @@ export default function NotificationsProvider({ children }) {
     return response.data;
   }, [refresh]);
 
-  const value = useMemo(() => ({ unreadCount, revision, connected, markRead, refresh }),
-    [unreadCount, revision, connected, markRead, refresh]);
+  const markBatchRead = useCallback(async (batchId) => {
+    await axiosClient.patch(`/notifications/batches/${batchId}/read`);
+    await refresh();
+  }, [refresh]);
+
+  const value = useMemo(() => ({ unreadCount, revision, connected, markRead, markBatchRead, refresh }),
+    [unreadCount, revision, connected, markRead, markBatchRead, refresh]);
 
   return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;
 }

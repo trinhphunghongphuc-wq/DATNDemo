@@ -18,6 +18,8 @@ import com.enums.Role;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.repository.BatchRepository;
 import com.repository.VehicleRepository;
+import com.repository.BatchReturnCaseRepository;
+import com.entity.BatchReturnCase.Status;
 import com.service.DeviceSignatureService;
 import com.service.DistributorService;
 import com.service.RecordService;
@@ -46,6 +48,7 @@ public class DistributorServiceImpl implements DistributorService {
     private final DeviceSignatureService deviceSignatureService;
     private ProductCategoryResponse productCategory;
     private final DemoVehicleRunRegistry demoVehicleRunRegistry;
+    private final BatchReturnCaseRepository returnCases;
     private final BatchLockService batchLockService;
     private final NotificationService notificationService;
 
@@ -142,6 +145,10 @@ public class DistributorServiceImpl implements DistributorService {
                                 "Vehicle not found or does not belong to this distributor"
                         )
                 );
+
+        if (returnCases.existsByVehicleIdAndStatus(vehicle.getId(), Status.IN_TRANSIT)) {
+            throw new com.exception.BusinessException("Xe đang thực hiện chuyến hoàn trả.");
+        }
 
         if (vehicle.getDevicePublicKey() == null
                 || vehicle.getDevicePublicKey().isBlank()) {
@@ -454,6 +461,10 @@ public class DistributorServiceImpl implements DistributorService {
                 distributorId
         );
 
+
+        if (returnCases.existsById(batchId)) {
+            throw new com.exception.BusinessException("Xử lý lô này tại mục Hồ sơ hoàn trả.");
+        }
 
         if (batch.getStatus() != BatchStatus.DELIVERY_REJECTED) {
             throw new IllegalStateException("Batch has not been rejected by retailer");
